@@ -1,0 +1,1553 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Hưng Thịnh – Hệ thống Marketing</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
+<script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-app.js"></script>
+<script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-database.js"></script>
+<link href="https://fonts.googleapis.com/css2?family=Be+Vietnam+Pro:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;600&display=swap" rel="stylesheet">
+<style>
+:root{
+  --bg:#0d1117;--bg2:#161b22;--bg3:#21262d;--bg4:#30363d;
+  --border:#30363d;--border2:#484f58;
+  --text:#e6edf3;--text2:#8b949e;--text3:#656d76;
+  --red:#f85149;--green:#3fb950;--blue:#58a6ff;--orange:#d29922;
+  --amber:#e3b341;--purple:#bc8cff;--pink:#f778ba;--teal:#39d353;
+  --accent:#f0883e;--accent2:#ffa657;
+  --font:'Be Vietnam Pro',sans-serif;--mono:'JetBrains Mono',monospace;
+  --r:8px;--r2:12px;--r3:16px;--shadow:0 8px 32px rgba(0,0,0,.4);
+}
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:var(--font);background:var(--bg);color:var(--text);font-size:14px;line-height:1.5;min-height:100vh}
+::-webkit-scrollbar{width:6px;height:6px}::-webkit-scrollbar-track{background:var(--bg2)}::-webkit-scrollbar-thumb{background:var(--bg4);border-radius:3px}
+
+/* ── AUTH SCREEN ── */
+#auth-screen{position:fixed;inset:0;background:radial-gradient(ellipse at 30% 20%,rgba(240,136,62,.12) 0%,transparent 60%),radial-gradient(ellipse at 70% 80%,rgba(88,166,255,.08) 0%,transparent 60%),var(--bg);display:flex;align-items:center;justify-content:center;z-index:999}
+.auth-box{background:var(--bg2);border:1px solid var(--border2);border-radius:20px;padding:40px;width:420px;max-width:92vw;box-shadow:var(--shadow)}
+.auth-logo{text-align:center;margin-bottom:28px}
+.auth-logo .icon{font-size:44px;margin-bottom:8px}
+.auth-logo h1{font-size:20px;font-weight:800;color:var(--accent)}
+.auth-logo p{font-size:12px;color:var(--text3);margin-top:4px}
+.auth-tabs{display:flex;background:var(--bg3);border-radius:var(--r2);padding:4px;margin-bottom:24px}
+.auth-tab{flex:1;padding:8px;text-align:center;border-radius:var(--r);font-size:13px;font-weight:600;cursor:pointer;color:var(--text2);transition:all .2s}
+.auth-tab.active{background:var(--bg2);color:var(--text);box-shadow:0 1px 4px rgba(0,0,0,.3)}
+.auth-form{display:flex;flex-direction:column;gap:14px}
+.auth-form label{font-size:11px;font-weight:700;color:var(--text3);text-transform:uppercase;letter-spacing:.5px;display:block;margin-bottom:5px}
+.auth-form input,.auth-form select{width:100%;background:var(--bg3);border:1px solid var(--border2);border-radius:var(--r);padding:11px 14px;color:var(--text);font-family:var(--font);font-size:14px;outline:none;transition:border-color .15s}
+.auth-form input:focus,.auth-form select:focus{border-color:var(--accent)}
+.auth-btn{width:100%;padding:13px;background:var(--accent);color:#fff;border:none;border-radius:var(--r2);font-family:var(--font);font-size:15px;font-weight:700;cursor:pointer;transition:all .2s;margin-top:4px}
+.auth-btn:hover{background:var(--accent2);transform:translateY(-1px)}
+.auth-hint{font-size:12px;color:var(--text3);text-align:center;margin-top:12px}
+.auth-hint strong{color:var(--accent)}
+.auth-err{padding:10px 14px;background:rgba(248,81,73,.12);border:1px solid rgba(248,81,73,.3);border-radius:var(--r);color:var(--red);font-size:13px}
+.auth-pending{padding:12px 14px;background:rgba(210,153,34,.1);border:1px solid rgba(210,153,34,.3);border-radius:var(--r);color:var(--amber);font-size:13px}
+
+/* ── APP LAYOUT ── */
+#app{display:none;height:100vh;overflow:hidden;flex-direction:column}
+#app.show{display:flex}
+.app-inner{display:flex;flex:1;overflow:hidden}
+#sidebar{width:224px;min-width:224px;background:var(--bg2);border-right:1px solid var(--border);display:flex;flex-direction:column}
+#main{flex:1;overflow-y:auto;display:flex;flex-direction:column}
+
+/* ── SIDEBAR ── */
+.sb-logo{padding:18px 16px 12px;border-bottom:1px solid var(--border)}
+.sb-logo h2{font-size:14px;font-weight:800;color:var(--accent);letter-spacing:.3px}
+.sb-logo p{font-size:11px;color:var(--text3);margin-top:2px}
+.sb-user{margin:10px 10px 4px;background:linear-gradient(135deg,rgba(240,136,62,.12),rgba(255,166,87,.06));border:1px solid rgba(240,136,62,.2);border-radius:var(--r2);padding:10px 12px}
+.sb-user .u-name{font-size:13px;font-weight:700;color:var(--accent2)}
+.sb-user .u-role{font-size:10px;color:var(--text3);margin-top:2px}
+.sb-user .u-store{font-size:11px;color:var(--text2);margin-top:3px}
+.sb-month{margin:6px 10px;background:var(--bg3);border-radius:var(--r);padding:8px 10px}
+.sb-month label{font-size:10px;color:var(--text3);display:block;margin-bottom:3px;text-transform:uppercase;letter-spacing:.5px}
+.sb-month select{width:100%;background:transparent;border:none;color:var(--text);font-family:var(--font);font-size:13px;font-weight:600;cursor:pointer;outline:none}
+.sb-nav{padding:6px 8px;flex:1;overflow-y:auto}
+.nav-sec{font-size:10px;color:var(--text3);font-weight:700;text-transform:uppercase;letter-spacing:.7px;padding:8px 12px 4px}
+.nav-item{display:flex;align-items:center;gap:9px;padding:9px 12px;border-radius:var(--r);cursor:pointer;color:var(--text2);font-size:13px;font-weight:500;transition:all .12s;margin-bottom:1px;border:1px solid transparent}
+.nav-item:hover{background:var(--bg3);color:var(--text)}
+.nav-item.active{background:linear-gradient(135deg,rgba(240,136,62,.15),rgba(255,166,87,.07));color:var(--accent2);border-color:rgba(240,136,62,.25)}
+.nav-item .ico{font-size:15px;width:20px;text-align:center;flex-shrink:0}
+.nav-item .nbadge{margin-left:auto;background:var(--red);color:#fff;font-size:10px;padding:1px 6px;border-radius:10px;font-weight:700}
+.sb-logout{padding:10px;border-top:1px solid var(--border)}
+.btn-logout{width:100%;padding:8px;background:transparent;border:1px solid var(--border2);border-radius:var(--r);color:var(--text2);font-family:var(--font);font-size:12px;font-weight:600;cursor:pointer;transition:all .15s;display:flex;align-items:center;justify-content:center;gap:6px}
+.btn-logout:hover{background:rgba(248,81,73,.1);color:var(--red);border-color:rgba(248,81,73,.3)}
+
+/* ── TOPBAR ── */
+#topbar{background:var(--bg2);border-bottom:1px solid var(--border);padding:0 20px;height:52px;display:flex;align-items:center;gap:12px;flex-shrink:0}
+#topbar h1{font-size:15px;font-weight:700;flex:1}
+.role-badge{padding:4px 10px;border-radius:20px;font-size:11px;font-weight:700}
+.role-admin{background:rgba(240,136,62,.15);color:var(--accent);border:1px solid rgba(240,136,62,.3)}
+.role-user{background:rgba(88,166,255,.12);color:var(--blue);border:1px solid rgba(88,166,255,.25)}
+
+/* ── CONTENT ── */
+#content{flex:1;padding:20px}
+.page{display:none}.page.active{display:block}
+
+/* ── CARDS ── */
+.cards-row{display:grid;gap:12px;margin-bottom:18px}
+.c5{grid-template-columns:repeat(5,1fr)}.c4{grid-template-columns:repeat(4,1fr)}.c3{grid-template-columns:repeat(3,1fr)}.c2{grid-template-columns:1fr 1fr}
+.card{background:var(--bg2);border:1px solid var(--border);border-radius:var(--r2);padding:14px 16px;position:relative;overflow:hidden}
+.card::before{content:'';position:absolute;top:0;left:0;right:0;height:2px;background:var(--card-clr,var(--blue))}
+.card-lbl{font-size:10px;color:var(--text3);font-weight:700;text-transform:uppercase;letter-spacing:.6px;margin-bottom:5px}
+.card-val{font-size:26px;font-weight:800;font-family:var(--mono);line-height:1}
+.card-sub{font-size:11px;color:var(--text3);margin-top:5px}
+
+/* ── TABLES ── */
+.tbl-wrap{background:var(--bg2);border:1px solid var(--border);border-radius:var(--r2);overflow:hidden;margin-bottom:18px}
+.tbl-bar{padding:11px 16px;border-bottom:1px solid var(--border);display:flex;align-items:center;gap:10px}
+.tbl-bar h3{font-size:13px;font-weight:700;flex:1}
+table{width:100%;border-collapse:collapse}
+thead th{background:var(--bg3);padding:9px 12px;text-align:left;font-size:11px;font-weight:700;color:var(--text2);text-transform:uppercase;letter-spacing:.4px;border-bottom:1px solid var(--border);white-space:nowrap}
+tbody tr{border-bottom:1px solid var(--border);transition:background .1s}
+tbody tr:last-child{border-bottom:none}
+tbody tr:hover{background:rgba(255,255,255,.025)}
+td{padding:9px 12px;font-size:13px;vertical-align:middle}
+td.num{font-family:var(--mono);font-size:12px;font-weight:600;text-align:right}
+td.c{text-align:center}
+
+/* ── BADGES ── */
+.badge{display:inline-flex;align-items:center;gap:3px;padding:3px 8px;border-radius:20px;font-size:11px;font-weight:700;white-space:nowrap}
+.bg{background:rgba(63,185,80,.12);color:var(--green);border:1px solid rgba(63,185,80,.2)}
+.br{background:rgba(248,81,73,.12);color:var(--red);border:1px solid rgba(248,81,73,.2)}
+.bo{background:rgba(210,153,34,.12);color:var(--amber);border:1px solid rgba(210,153,34,.2)}
+.bb{background:rgba(88,166,255,.12);color:var(--blue);border:1px solid rgba(88,166,255,.2)}
+.bgr{background:var(--bg4);color:var(--text2);border:1px solid var(--border)}
+.bp{background:rgba(188,140,255,.12);color:var(--purple);border:1px solid rgba(188,140,255,.2)}
+
+/* ── PROGRESS ── */
+.pb-wrap{display:flex;align-items:center;gap:7px;min-width:120px}
+.pb{flex:1;height:4px;background:var(--bg4);border-radius:3px;overflow:hidden}
+.pb-fill{height:100%;border-radius:3px;transition:width .35s ease}
+.pb-pct{font-size:11px;font-family:var(--mono);font-weight:700;min-width:34px;text-align:right}
+
+/* ── FORMS ── */
+.f-card{background:var(--bg2);border:1px solid var(--border);border-radius:var(--r2);padding:18px;margin-bottom:14px}
+.f-card h3{font-size:14px;font-weight:700;margin-bottom:14px;display:flex;align-items:center;gap:8px}
+.fg{display:grid;gap:12px}
+.c2f{grid-template-columns:1fr 1fr}.c3f{grid-template-columns:1fr 1fr 1fr}.c4f{grid-template-columns:1fr 1fr 1fr 1fr}
+.fr{display:flex;flex-direction:column;gap:4px}
+.fr label{font-size:11px;font-weight:700;color:var(--text2);text-transform:uppercase;letter-spacing:.4px}
+.fr input,.fr select,.fr textarea{background:var(--bg3);border:1px solid var(--border2);border-radius:var(--r);padding:9px 12px;color:var(--text);font-family:var(--font);font-size:13px;width:100%;outline:none;transition:border-color .15s}
+.fr input:focus,.fr select:focus,.fr textarea:focus{border-color:var(--accent)}
+.fr textarea{resize:vertical;min-height:56px}
+.fr.req label::after{content:' *';color:var(--red)}
+.sep{height:1px;background:var(--border);grid-column:1/-1}
+.grp-lbl{font-size:11px;font-weight:700;color:var(--accent);text-transform:uppercase;letter-spacing:.5px;grid-column:1/-1;margin-top:4px;padding-bottom:6px;border-bottom:1px solid rgba(240,136,62,.2)}
+
+/* ── BTNS ── */
+.btn{padding:7px 14px;border-radius:var(--r);font-family:var(--font);font-size:13px;font-weight:600;cursor:pointer;border:none;transition:all .15s;display:inline-flex;align-items:center;gap:6px}
+.btn-p{background:var(--accent);color:#fff}.btn-p:hover{background:var(--accent2)}
+.btn-g{background:var(--bg3);color:var(--text);border:1px solid var(--border2)}.btn-g:hover{background:var(--bg4)}
+.btn-s{background:var(--green);color:#000}.btn-s:hover{filter:brightness(1.1)}
+.btn-d{background:var(--red);color:#fff}.btn-d:hover{filter:brightness(1.1)}
+.btn-b{background:rgba(88,166,255,.15);color:var(--blue);border:1px solid rgba(88,166,255,.25)}.btn-b:hover{background:rgba(88,166,255,.25)}
+.sm{padding:5px 10px;font-size:12px}
+
+/* ── FILTER ── */
+.fbar{display:flex;gap:10px;margin-bottom:14px;flex-wrap:wrap;align-items:center}
+.fbar input,.fbar select{background:var(--bg2);border:1px solid var(--border2);border-radius:var(--r);padding:7px 11px;color:var(--text);font-family:var(--font);font-size:13px;outline:none}
+.fbar input:focus,.fbar select:focus{border-color:var(--accent)}
+
+/* ── SUBTABS ── */
+.stabs{display:flex;gap:0;margin-bottom:14px;background:var(--bg2);border:1px solid var(--border);border-radius:var(--r2);padding:4px;width:fit-content}
+.stab{padding:6px 14px;border-radius:var(--r);font-size:12px;font-weight:600;cursor:pointer;color:var(--text2);border:none;background:none;font-family:var(--font);transition:all .15s}
+.stab.active{background:var(--bg3);color:var(--text)}
+
+/* ── TOAST ── */
+#toast{position:fixed;bottom:20px;right:20px;z-index:9999;display:flex;flex-direction:column;gap:8px}
+.ti{padding:11px 16px;border-radius:var(--r2);font-size:13px;font-weight:600;box-shadow:var(--shadow);animation:slin .2s ease;display:flex;align-items:center;gap:8px;max-width:360px}
+.ti.ok{background:#0d2b14;color:var(--green);border:1px solid rgba(63,185,80,.25)}
+.ti.err{background:#2b0d0d;color:var(--red);border:1px solid rgba(248,81,73,.25)}
+.ti.inf{background:#0d1f2b;color:var(--blue);border:1px solid rgba(88,166,255,.25)}
+.ti.warn{background:#2b200d;color:var(--amber);border:1px solid rgba(210,153,34,.25)}
+@keyframes slin{from{opacity:0;transform:translateX(16px)}to{opacity:1;transform:none}}
+
+/* ── MODAL ── */
+.ov{position:fixed;inset:0;background:rgba(0,0,0,.65);z-index:200;display:flex;align-items:center;justify-content:center;backdrop-filter:blur(3px)}
+.modal{background:var(--bg2);border:1px solid var(--border2);border-radius:var(--r3);padding:24px;width:560px;max-width:94vw;max-height:85vh;overflow-y:auto}
+.modal h2{font-size:16px;font-weight:700;margin-bottom:18px}
+.modal-foot{display:flex;gap:10px;justify-content:flex-end;margin-top:18px;padding-top:14px;border-top:1px solid var(--border)}
+
+/* ── CHARTS ── */
+.ch-wrap{background:var(--bg2);border:1px solid var(--border);border-radius:var(--r2);padding:14px;margin-bottom:18px}
+.ch-wrap h3{font-size:12px;font-weight:700;color:var(--text2);margin-bottom:12px}
+
+/* ── MISC ── */
+.sec-t{font-size:12px;font-weight:700;color:var(--text2);text-transform:uppercase;letter-spacing:.7px;margin-bottom:10px;padding-bottom:7px;border-bottom:1px solid var(--border);display:flex;align-items:center;gap:8px}
+.sec-t span{flex:1}
+.empty{text-align:center;padding:48px 24px;color:var(--text3)}
+.empty .ei{font-size:36px;margin-bottom:10px}
+.tag{display:inline-block;padding:2px 7px;border-radius:4px;font-size:11px;font-weight:600;margin:1px}
+.tb{background:rgba(88,166,255,.12);color:var(--blue)}.tg{background:rgba(63,185,80,.12);color:var(--green)}.to{background:rgba(210,153,34,.12);color:var(--amber)}.tp{background:rgba(188,140,255,.12);color:var(--purple)}
+.alert{padding:12px 14px;border-radius:var(--r);font-size:13px;margin-bottom:14px}
+.alert-warn{background:rgba(210,153,34,.1);border:1px solid rgba(210,153,34,.25);color:var(--amber)}
+.alert-info{background:rgba(88,166,255,.1);border:1px solid rgba(88,166,255,.25);color:var(--blue)}
+.alert-ok{background:rgba(63,185,80,.1);border:1px solid rgba(63,185,80,.25);color:var(--green)}
+.scr-scroll{overflow-x:auto}
+.pending-dot{display:inline-block;width:7px;height:7px;background:var(--amber);border-radius:50%;margin-right:4px;animation:pulse 1.5s infinite}
+@keyframes pulse{0%,100%{opacity:1}50%{opacity:.4}}
+.grid2{display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:18px}
+</style>
+</head>
+<body>
+
+<!-- ══════════ AUTH SCREEN ══════════ -->
+<div id="auth-screen">
+  <div class="auth-box">
+    <div class="auth-logo">
+      <div class="icon">🏍️</div>
+      <h1>HƯNG THỊNH MKT</h1>
+      <p>Hệ thống Quản lý Marketing</p>
+    </div>
+    <div class="auth-tabs">
+      <div class="auth-tab active" id="tab-login" onclick="switchAuthTab('login')">Đăng nhập</div>
+      <div class="auth-tab" id="tab-register" onclick="switchAuthTab('register')">Đăng ký tài khoản</div>
+    </div>
+
+    <!-- LOGIN FORM -->
+    <div id="login-form" class="auth-form">
+      <div id="login-err" style="display:none" class="auth-err"></div>
+      <div>
+        <label>Tên đăng nhập</label>
+        <input type="text" id="l-user" placeholder="username" autocomplete="username" onkeydown="if(event.key==='Enter')doLogin()">
+      </div>
+      <div>
+        <label>Mật khẩu</label>
+        <input type="password" id="l-pass" placeholder="••••••••" autocomplete="current-password" onkeydown="if(event.key==='Enter')doLogin()">
+      </div>
+      <button class="auth-btn" onclick="doLogin()">Đăng nhập →</button>
+      <p class="auth-hint">Admin mặc định: <strong>admin</strong> / <strong>admin123</strong></p>
+    </div>
+
+    <!-- REGISTER FORM -->
+    <div id="register-form" class="auth-form" style="display:none">
+      <div id="reg-err" style="display:none" class="auth-err"></div>
+      <div>
+        <label>Họ và tên</label>
+        <input type="text" id="r-name" placeholder="Nguyễn Văn A">
+      </div>
+      <div>
+        <label>Tên đăng nhập</label>
+        <input type="text" id="r-user" placeholder="username (không dấu, không khoảng trắng)">
+      </div>
+      <div>
+        <label>Mật khẩu</label>
+        <input type="password" id="r-pass" placeholder="Tối thiểu 6 ký tự">
+      </div>
+      <div>
+        <label>Đơn vị / Cửa hàng</label>
+        <select id="r-store"></select>
+      </div>
+      <button class="auth-btn" onclick="doRegister()">Gửi yêu cầu đăng ký</button>
+      <p class="auth-hint">Tài khoản cần được <strong>Admin phê duyệt</strong> trước khi sử dụng</p>
+    </div>
+  </div>
+</div>
+
+<!-- ══════════ MAIN APP ══════════ -->
+<div id="app">
+  <div class="app-inner">
+    <aside id="sidebar">
+      <div class="sb-logo">
+        <h2>🏍️ HƯNG THỊNH MKT</h2>
+        <p>Marketing Management System</p>
+      </div>
+      <div id="sb-user-card" class="sb-user"></div>
+      <div class="sb-month">
+        <label>Tháng báo cáo</label>
+        <select id="globalMonth" onchange="setGlobalMonth()">
+          <option value="4">Tháng 4 / 2026</option>
+          <option value="5" selected>Tháng 5 / 2026</option>
+          <option value="6">Tháng 6 / 2026</option>
+        </select>
+      </div>
+      <nav class="sb-nav" id="sb-nav"></nav>
+      <div class="sb-logout">
+        <button class="btn-logout" onclick="doLogout()">🚪 Đăng xuất</button>
+      </div>
+    </aside>
+
+    <main id="main">
+      <div id="topbar">
+        <h1 id="tb-title">Dashboard</h1>
+        <div id="tb-role"></div>
+        <button class="btn btn-g sm" onclick="syncUI()">🔄</button>
+        <div id="day-prog" style="font-size:12px;color:var(--text3)"></div>
+      </div>
+      <div id="content">
+        <div id="p-dashboard" class="page active"></div>
+        <div id="p-entry" class="page"></div>
+        <div id="p-history" class="page"></div>
+        <div id="p-kpi" class="page"></div>
+        <div id="p-config" class="page"></div>
+        <div id="p-users" class="page"></div>
+        <div id="p-export" class="page"></div>
+      </div>
+    </main>
+  </div>
+</div>
+<div id="toast"></div>
+
+<script>
+// ═══════════════════════════════════════════════
+// DATABASE
+// ═══════════════════════════════════════════════
+const SK = 'ht-mkt-v8';
+let DB = { stores:[], categories:[], kpiTargets:[], dailyLogs:[], users:[], settings:{month:5,year:2026} };
+let curUser = null;
+let curMonth = 5, curYear = 2026;
+let curPage = 'dashboard';
+let charts = {};
+let configTab = 'stores';
+
+const STORES_DEF = [
+  {id:'CH01',name:'Lý Bôn',code:'LB',area:'TP Thái Bình',idx:1},
+  {id:'CH02',name:'Quang Trung 1',code:'QT1',area:'TP Thái Bình',idx:2},
+  {id:'CH03',name:'Quang Trung 2',code:'QT2',area:'TP Thái Bình',idx:3},
+  {id:'CH04',name:'Vũ Thư 1',code:'VT1',area:'Vũ Thư',idx:4},
+  {id:'CH05',name:'Vũ Thư 2',code:'VT2',area:'Vũ Thư',idx:5},
+  {id:'CH06',name:'Minh Khai',code:'MK',area:'TP Thái Bình',idx:6},
+  {id:'CH07',name:'Minh Khai 2',code:'MK2',area:'TP Thái Bình',idx:7},
+  {id:'CH08',name:'Kiến Xương',code:'KX',area:'Kiến Xương',idx:8},
+  {id:'CH09',name:'Tiền Hải',code:'TH',area:'Tiền Hải',idx:9},
+  {id:'CH10',name:'Đông Hưng',code:'DH',area:'Đông Hưng',idx:10},
+  {id:'CH11',name:'Gia Lễ',code:'GL',area:'TP Thái Bình',idx:11},
+  {id:'CH12',name:'BHOL',code:'BHOL',area:'Trực tuyến',idx:12},
+];
+const CATS_DEF = [
+  {id:'CV01',name:'Livestream',code:'LIVE',unit:'Phiên',scope:'Đơn vị+BHOL'},
+  {id:'CV02',name:'Bài đăng Facebook',code:'FB',unit:'Bài',scope:'Đơn vị'},
+  {id:'CV03',name:'Video TikTok',code:'TT',unit:'Video',scope:'Đơn vị'},
+  {id:'CV04',name:'Bán hàng Online',code:'BHOL',unit:'Leads',scope:'BHOL'},
+  {id:'CV05',name:'Giao xe Online',code:'GX',unit:'Xe',scope:'BHOL'},
+  {id:'CV06',name:'Đào tạo',code:'ĐT',unit:'Buổi',scope:'MKT'},
+  {id:'CV07',name:'Trực Ads',code:'ADS',unit:'VNĐ',scope:'MKT'},
+  {id:'CV08',name:'Đánh giá STND',code:'STND',unit:'Điểm',scope:'BHOL'},
+  {id:'CV09',name:'Video TVC',code:'TVC',unit:'Video',scope:'BHOL'},
+  {id:'CV10',name:'KH Tiềm Năng',code:'KHTN',unit:'KH',scope:'Đơn vị'},
+];
+const TARGETS_DEF = (() => {
+  const d={CH01:{CV01:15,CV02:30,CV03:10,CV10:40},CH02:{CV01:15,CV02:30,CV03:10,CV10:30},
+    CH03:{CV01:15,CV02:30,CV03:10,CV10:45},CH04:{CV01:15,CV02:30,CV03:10,CV10:50},
+    CH05:{CV01:15,CV02:30,CV03:10,CV10:30},CH06:{CV01:8,CV02:20,CV03:8,CV10:20},
+    CH07:{CV01:10,CV02:25,CV03:8,CV10:25},CH08:{CV01:15,CV02:30,CV03:10,CV10:45},
+    CH09:{CV01:15,CV02:30,CV03:10,CV10:45},CH10:{CV01:15,CV02:30,CV03:10,CV10:40},
+    CH11:{CV01:0,CV02:20,CV03:8,CV10:20},CH12:{CV01:4,CV02:0,CV03:8,CV10:0}};
+  const out=[];let i=1;
+  for(const[sid,cats]of Object.entries(d))for(const[cid,t]of Object.entries(cats))if(t>0)out.push({id:`KT${i++}`,year:2026,month:5,storeId:sid,categoryId:cid,target:t,staff:'',note:''});
+  return out;
+})();
+
+// ── STORAGE (FIREBASE REALTIME) ──
+const firebaseConfig = {
+  apiKey: "AIzaSyA7rWgYHVdpRDbDm1m_D0ljb7ekULv0Iew",
+  authDomain: "hungthinh-marketing.firebaseapp.com",
+  databaseURL: "https://hungthinh-marketing-default-rtdb.asia-southeast1.firebasedatabase.app",
+  projectId: "hungthinh-marketing",
+  storageBucket: "hungthinh-marketing.firebasestorage.app",
+  messagingSenderId: "751858538973",
+  appId: "1:751858538973:web:8a78d536c35d99ed3b7e34",
+  measurementId: "G-1BT1M23VHX"
+};
+
+// Khởi tạo kết nối
+if (!firebase.apps.length) {
+  firebase.initializeApp(firebaseConfig);
+}
+const database = firebase.database();
+
+// Hàm lưu dữ liệu đẩy thẳng lên Cloud
+function saveDB() {
+  try {
+    database.ref('ht_database').set(DB);
+  } catch (e) {
+    console.error('Lỗi khi lưu lên Firebase:', e);
+  }
+}
+
+// Hàm tải dữ liệu Real-time
+function loadDB() {
+  const dbRef = database.ref('ht_database');
+  
+  // on() giúp web tự động cập nhật ngay khi có ai đó bấm Lưu báo cáo
+  dbRef.on('value', (snapshot) => {
+    const rawData = snapshot.val();
+    
+    if (rawData) {
+      DB = rawData;
+    } else {
+      // Nếu Database trống trơn (lần đầu tiên sử dụng)
+      DB.stores = [...STORES_DEF];
+      DB.categories = [...CATS_DEF];
+      DB.kpiTargets = [...TARGETS_DEF];
+      DB.dailyLogs = [];
+      DB.users = [{id:'admin', username:'admin', password:'admin123', name:'Quản lý MKT', role:'admin', storeId:null, active:true, createdAt:Date.now()}];
+      DB.settings = {month:5, year:2026};
+      saveDB(); // Lưu ngược cấu trúc chuẩn lên Cloud
+    }
+
+    // Đảm bảo các cấu trúc không bị mất
+    if(!DB.users) DB.users = [];
+    if(!DB.dailyLogs) DB.dailyLogs = [];
+    
+    curMonth = DB.settings?.month || 5; 
+    curYear = DB.settings?.year || 2026;
+    document.getElementById('globalMonth').value = curMonth;
+    
+    fillRegisterStores();
+
+    // Xử lý luồng đăng nhập / hiển thị
+    const sess = sessionStorage.getItem('ht_sess');
+    if (sess) {
+      const u = DB.users.find(u => u.id === sess && u.active);
+      if (u) {
+        curUser = u;
+        // Nếu app đang mở, chỉ cần sync lại UI (nhảy số real-time)
+        if (document.getElementById('app').classList.contains('show')) {
+           syncUI(); 
+           if(isAdmin()) updateBellBadge();
+        } else {
+           showApp();
+        }
+        return;
+      }
+    }
+    showAuth();
+  });
+}
+
+// ═══════════════════════════════════════════════
+// AUTH
+// ═══════════════════════════════════════════════
+function fillRegisterStores(){
+  const s=document.getElementById('r-store');if(!s)return;
+  s.innerHTML=DB.stores.filter(st=>st.id!=='CH12').map(st=>`<option value="${st.id}">${st.name}</option>`).join('');
+}
+function switchAuthTab(tab){
+  document.getElementById('login-form').style.display=tab==='login'?'flex':'none';
+  document.getElementById('register-form').style.display=tab==='register'?'flex':'none';
+  document.getElementById('tab-login').classList.toggle('active',tab==='login');
+  document.getElementById('tab-register').classList.toggle('active',tab==='register');
+}
+function doLogin(){
+  // trim() + toLowerCase() để tránh lỗi khoảng trắng/hoa thường
+  const inputUser = document.getElementById('l-user').value.trim().toLowerCase();
+  const inputPass = document.getElementById('l-pass').value;
+  const err = document.getElementById('login-err');
+  if(!inputUser||!inputPass){
+    err.style.display='block'; err.textContent='Vui lòng nhập tên đăng nhập và mật khẩu!'; return;
+  }
+  const found = DB.users.find(x => x.username.trim().toLowerCase() === inputUser && x.password === inputPass);
+  if(!found){
+    err.style.display='block'; err.textContent='Tên đăng nhập hoặc mật khẩu không đúng!'; return;
+  }
+  if(!found.active){
+    err.style.display='block'; err.textContent='Tài khoản chưa được phê duyệt hoặc đã bị khoá. Liên hệ Admin.'; return;
+  }
+  err.style.display='none';
+  curUser = found;
+  sessionStorage.setItem('ht_sess', found.id);
+  showApp();
+}
+function doRegister(){
+  const name     = document.getElementById('r-name').value.trim();
+  const username = document.getElementById('r-user').value.trim().toLowerCase();
+  const pass     = document.getElementById('r-pass').value;
+  const storeId  = document.getElementById('r-store').value;
+  const err      = document.getElementById('reg-err');
+
+  // --- Validate ---
+  if(!name||!username||!pass){
+    err.style.display='block'; err.textContent='Vui lòng điền đầy đủ thông tin!'; return;
+  }
+  if(!/^[a-zA-Z0-9_]+$/.test(username)){
+    err.style.display='block'; err.textContent='Tên đăng nhập chỉ dùng chữ cái, số, dấu gạch dưới!'; return;
+  }
+  if(pass.length<6){
+    err.style.display='block'; err.textContent='Mật khẩu tối thiểu 6 ký tự!'; return;
+  }
+  if(DB.users.find(u => u.username.trim().toLowerCase() === username)){
+    err.style.display='block'; err.textContent='Tên đăng nhập đã tồn tại!'; return;
+  }
+
+  // --- Push và lưu ngay lập tức ---
+  // approved:false = chờ admin duyệt (khác với locked = approved:true nhưng active:false)
+  const newUser = {
+    id: 'u_' + Date.now(),
+    username,
+    password: pass,
+    name,
+    role: 'user',
+    storeId,
+    active: false,
+    approved: false,
+    createdAt: Date.now()
+  };
+  DB.users.push(newUser);
+  saveDB(); // ← lưu cứng ngay, không delay
+
+  // --- UI feedback ---
+  err.style.display='none';
+  const fb = document.getElementById('register-form');
+  fb.innerHTML=`<div class="auth-pending">⏳ Yêu cầu đăng ký đã được gửi!<br>Admin sẽ phê duyệt tài khoản <strong>${name}</strong> sớm nhất có thể.</div>
+  <button class="auth-btn" onclick="location.reload()">← Quay lại đăng nhập</button>`;
+}
+function doLogout(){
+  curUser=null;sessionStorage.removeItem('ht_sess');
+  document.getElementById('app').classList.remove('show');
+  document.getElementById('auth-screen').style.display='flex';
+  document.getElementById('l-user').value='';document.getElementById('l-pass').value='';
+  document.getElementById('login-err').style.display='none';
+  toast('Đã đăng xuất','inf');
+}
+function showAuth(){document.getElementById('auth-screen').style.display='flex';document.getElementById('app').classList.remove('show');}
+function showApp(){
+  document.getElementById('auth-screen').style.display='none';
+  document.getElementById('app').classList.add('show');
+  buildSidebar();updateSbUser();renderPage('dashboard');updateDayProg();
+  // Notify admin about pending accounts
+  if(isAdmin()){
+    const pending=DB.users.filter(u=>u.active===false&&u.approved!==true&&u.role!=='admin').length;
+    if(pending>0){
+      setTimeout(()=>toast(`🔔 Có ${pending} tài khoản mới đang chờ phê duyệt!`,'warn'),600);
+    }
+    updateBellBadge();
+  }
+}
+function updateBellBadge(){
+  const pending=DB.users.filter(u=>u.active===false&&u.approved!==true&&u.role!=='admin').length;
+  const existing=document.getElementById('topbar-bell');
+  if(existing)existing.remove();
+  if(!isAdmin())return;
+  const bell=document.createElement('div');
+  bell.id='topbar-bell';
+  bell.title='Tài khoản chờ duyệt';
+  bell.onclick=()=>nav('users');
+  bell.style.cssText='position:relative;cursor:pointer;font-size:18px;display:flex;align-items:center;padding:4px 6px;border-radius:8px;transition:background .15s;';
+  bell.onmouseenter=()=>{bell.style.background='var(--bg3)';};
+  bell.onmouseleave=()=>{bell.style.background='transparent';};
+  bell.innerHTML='🔔';
+  if(pending>0){
+    const dot=document.createElement('span');
+    dot.style.cssText='position:absolute;top:2px;right:2px;width:8px;height:8px;background:var(--red);border-radius:50%;animation:pulse 1.5s infinite;border:1px solid var(--bg2);';
+    bell.appendChild(dot);
+  }
+  const topbar=document.getElementById('topbar');
+  const roleEl=document.getElementById('tb-role');
+  topbar.insertBefore(bell,roleEl);
+}
+function isAdmin(){return curUser?.role==='admin';}
+function myStores(){return isAdmin()?DB.stores:DB.stores.filter(s=>s.id===curUser?.storeId);}
+
+// ═══════════════════════════════════════════════
+// SIDEBAR
+// ═══════════════════════════════════════════════
+function updateSbUser(){
+  const el=document.getElementById('sb-user-card');if(!el)return;
+  const store=curUser?.storeId?DB.stores.find(s=>s.id===curUser.storeId):null;
+  el.innerHTML=`<div class="u-name">${curUser?.name||'—'}</div>
+  <div class="u-role">${isAdmin()?'👑 Quản trị viên':'👤 Nhân sự đơn vị'}</div>
+  ${store?`<div class="u-store">📍 ${store.name}</div>`:''}`;
+  document.getElementById('tb-role').innerHTML=`<span class="role-badge ${isAdmin()?'role-admin':'role-user'}">${isAdmin()?'ADMIN':'USER'}</span>`;
+}
+function buildSidebar(){
+  const nav=document.getElementById('sb-nav');
+  const pending=DB.users.filter(u=>u.active===false&&u.approved!==true&&u.role!=='admin').length;
+  nav.innerHTML=`
+  <div class="nav-sec">Báo cáo</div>
+  <div class="nav-item active" onclick="nav('dashboard')"><span class="ico">📊</span>Dashboard</div>
+  <div class="nav-item" onclick="nav('entry')"><span class="ico">✏️</span>Nhập liệu</div>
+  <div class="nav-item" onclick="nav('history')"><span class="ico">📋</span>Lịch sử <span id="lc" class="nbadge" style="display:none">0</span></div>
+  <div class="nav-sec">Quản lý</div>
+  <div class="nav-item" onclick="nav('kpi')"><span class="ico">🎯</span>Chỉ tiêu KPI</div>
+  ${isAdmin()?`
+  <div class="nav-item" onclick="nav('users')"><span class="ico">👥</span>Người dùng ${pending>0?`<span class="nbadge">${pending}</span>`:''}</div>
+  <div class="nav-item" onclick="nav('config')"><span class="ico">⚙️</span>Cấu hình</div>
+  <div class="nav-item" onclick="nav('export')"><span class="ico">📤</span>Xuất báo cáo</div>`:''}`;
+}
+function setGlobalMonth(){curMonth=parseInt(document.getElementById('globalMonth').value);DB.settings.month=curMonth;saveDB();syncUI();}
+function syncUI(){renderPage(curPage);updateDayProg();updateLogBadge();}
+function updateDayProg(){
+  const days=new Date(curYear,curMonth,0).getDate();
+  const t=new Date();const cur=t.getMonth()+1===curMonth?t.getDate():days;
+  document.getElementById('day-prog').textContent=`Ngày ${cur}/${days} (${Math.round(cur/days*100)}%)`;
+}
+function updateLogBadge(){
+  const c=DB.dailyLogs.filter(l=>l.month===curMonth&&l.year===curYear&&(isAdmin()||l.storeId===curUser?.storeId)).length;
+  const el=document.getElementById('lc');if(el){el.textContent=c;el.style.display=c>0?'inline':'none';}
+}
+
+const PAGE_TITLES={dashboard:'📊 Dashboard Tổng quan',entry:'✏️ Nhập liệu hàng ngày',history:'📋 Lịch sử báo cáo',kpi:'🎯 Chỉ tiêu KPI',config:'⚙️ Cấu hình hệ thống',users:'👥 Quản lý người dùng',export:'📤 Xuất báo cáo'};
+function nav(page){
+  if(!isAdmin()&&['config','users','export'].includes(page))return;
+  curPage=page;
+  document.querySelectorAll('.nav-item').forEach(el=>el.classList.remove('active'));
+  // find matching nav item
+  document.querySelectorAll('.nav-item').forEach(el=>{if(el.textContent.trim().startsWith(PAGE_TITLES[page]?.slice(2,5)||page))el.classList.add('active');});
+  document.querySelectorAll('.page').forEach(p=>p.classList.remove('active'));
+  document.getElementById('p-'+page).classList.add('active');
+  document.getElementById('tb-title').textContent=PAGE_TITLES[page]||page;
+  renderPage(page);
+}
+function renderPage(page){
+  if(page==='dashboard')renderDash();
+  else if(page==='entry')renderEntry();
+  else if(page==='history')renderHistory();
+  else if(page==='kpi')renderKPI();
+  else if(page==='config')renderConfig();
+  else if(page==='users')renderUsers();
+  else if(page==='export')renderExport();
+  updateLogBadge();
+}
+
+// ═══════════════════════════════════════════════
+// HELPERS
+// ═══════════════════════════════════════════════
+const sname=id=>DB.stores.find(s=>s.id===id)?.name||id;
+const cname=id=>DB.categories.find(c=>c.id===id)?.name||id;
+function getT(sid,cid,m,y){return DB.kpiTargets.find(t=>t.storeId===sid&&t.categoryId===cid&&t.month===(m||curMonth)&&t.year===(y||curYear))?.target||0;}
+function sumL(sid,cid,field,m,y){return DB.dailyLogs.filter(l=>l.storeId===sid&&l.categoryId===cid&&l.month===(m||curMonth)&&l.year===(y||curYear)).reduce((s,l)=>s+(parseFloat(l[field])||0),0);}
+function sumF(sid,field,m,y){return DB.dailyLogs.filter(l=>l.storeId===sid&&l.month===(m||curMonth)&&l.year===(y||curYear)).reduce((s,l)=>s+(parseFloat(l[field])||0),0);}
+function pct(a,t){return t>0?Math.min(Math.round(a/t*100),999):(a>0?100:0);}
+function exPct(){const days=new Date(curYear,curMonth,0).getDate();const t=new Date();const cur=t.getMonth()+1===curMonth?t.getDate():days;return Math.round(cur/days*100);}
+function statusB(a,t){
+  if(t===0)return'<span class="badge bgr">N/A</span>';
+  const p=pct(a,t),ex=exPct();
+  if(p>=100)return'<span class="badge bb">✅ HT</span>';
+  if(p>=ex)return'<span class="badge bg">🟢 ĐẠT</span>';
+  if(p>=ex*.7)return'<span class="badge bo">🟡 CHẬM</span>';
+  return'<span class="badge br">🔴 TỤT</span>';
+}
+function pb(a,t){
+  const p=t>0?Math.min(pct(a,t),100):0,ex=exPct();
+  const c=p>=100?'var(--blue)':p>=ex?'var(--green)':p>=ex*.7?'var(--amber)':'var(--red)';
+  return`<div class="pb-wrap"><div class="pb"><div class="pb-fill" style="width:${p}%;background:${c}"></div></div><span class="pb-pct" style="color:${c}">${p}%</span></div>`;
+}
+function uid(){return'id_'+Date.now()+'_'+Math.random().toString(36).slice(2,6);}
+function fmtN(n){if(!n)return'—';if(n>=1e6)return(n/1e6).toFixed(1)+'M';if(n>=1e3)return(n/1e3).toFixed(0)+'K';return n;}
+function fmtDt(ts){if(!ts)return'';const d=new Date(ts);return`${d.getDate()}/${d.getMonth()+1} ${d.getHours()}:${String(d.getMinutes()).padStart(2,'0')}`;}
+function toast(msg,type='ok'){
+  const c=document.getElementById('toast');const d=document.createElement('div');
+  d.className=`ti ${type}`;
+  d.innerHTML=(type==='ok'?'✓':type==='err'?'✕':type==='warn'?'⚠':'ℹ')+' '+msg;
+  c.appendChild(d);setTimeout(()=>{d.style.opacity='0';d.style.transition='opacity .3s';setTimeout(()=>d.remove(),300);},3800);
+}
+function g(id){const el=document.getElementById(id);return el?el.value:'';}
+function gn(id){const el=document.getElementById(id);return el?parseInt(el.value)||0:0;}
+
+// ═══════════════════════════════════════════════
+// DASHBOARD
+// ═══════════════════════════════════════════════
+function renderDash(){
+  const el=document.getElementById('p-dashboard');
+  const stores=myStores();const m=curMonth,y=curYear;
+  let totFB=0,totTT=0,totLV=0,totKH=0,tFB=0,tTT=0,tLV=0,tKH=0,totLX=0,totADS=0,totCOC=0;
+  stores.forEach(s=>{
+    totFB+=sumL(s.id,'CV02','soBai',m,y);totTT+=sumL(s.id,'CV03','soBai',m,y);
+    totLV+=sumL(s.id,'CV01','soBai',m,y);totKH+=sumF(s.id,'leadsNhanTin',m,y);
+    totLX+=sumL(s.id,'CV01','luotXem',m,y);totADS+=sumF(s.id,'chiPhiAds',m,y);
+    totCOC+=sumF(s.id,'leadsDatCoc',m,y);
+    tFB+=getT(s.id,'CV02',m,y);tTT+=getT(s.id,'CV03',m,y);tLV+=getT(s.id,'CV01',m,y);tKH+=getT(s.id,'CV10',m,y);
+  });
+  const ex=exPct();
+  const sysPcts=[tFB>0?pct(totFB,tFB):null,tTT>0?pct(totTT,tTT):null,tLV>0?pct(totLV,tLV):null,tKH>0?pct(totKH,tKH):null].filter(v=>v!==null);
+  const sysAvg=sysPcts.length?Math.round(sysPcts.reduce((a,b)=>a+b,0)/sysPcts.length):0;
+  const sc=sysAvg>=ex?'var(--green)':sysAvg>=ex*.7?'var(--amber)':'var(--red)';
+  const totalLogs=DB.dailyLogs.filter(l=>l.month===m&&l.year===y&&(isAdmin()||l.storeId===curUser?.storeId)).length;
+
+  const stRows=stores.map(s=>{
+    const fb=sumL(s.id,'CV02','soBai',m,y),tFb=getT(s.id,'CV02',m,y);
+    const tt=sumL(s.id,'CV03','soBai',m,y),tTt=getT(s.id,'CV03',m,y);
+    const lv=sumL(s.id,'CV01','soBai',m,y),tLv=getT(s.id,'CV01',m,y);
+    const kh=sumF(s.id,'leadsNhanTin',m,y),tKh=getT(s.id,'CV10',m,y);
+    const avgs=[tFb?pct(fb,tFb):null,tTt?pct(tt,tTt):null,tLv?pct(lv,tLv):null,tKh?pct(kh,tKh):null].filter(v=>v!==null);
+    const avg=avgs.length?Math.round(avgs.reduce((a,b)=>a+b,0)/avgs.length):0;
+    return{s,fb,tFb,tt,tTt,lv,tLv,kh,tKh,avg};
+  }).sort((a,b)=>b.avg-a.avg);
+
+  const recentLogs=DB.dailyLogs.filter(l=>l.month===m&&l.year===y&&(isAdmin()||l.storeId===curUser?.storeId)).slice(-6).reverse();
+
+  el.innerHTML=`
+  <div class="cards-row c5">
+    <div class="card" style="--card-clr:${sc}"><div class="card-lbl">Tiến độ ${isAdmin()?'hệ thống':sname(curUser?.storeId)}</div><div class="card-val" style="color:${sc}">${sysAvg}%</div><div class="card-sub">Kỳ vọng: ${ex}%</div></div>
+    <div class="card" style="--card-clr:var(--blue)"><div class="card-lbl">Facebook</div><div class="card-val">${totFB}</div><div class="card-sub">/ ${tFB} bài · ${pct(totFB,tFB)}%</div></div>
+    <div class="card" style="--card-clr:var(--pink)"><div class="card-lbl">TikTok</div><div class="card-val">${totTT}</div><div class="card-sub">/ ${tTT} video · ${pct(totTT,tTT)}%</div></div>
+    <div class="card" style="--card-clr:var(--red)"><div class="card-lbl">Livestream</div><div class="card-val">${totLV}</div><div class="card-sub">/ ${tLV} phiên · ${fmtN(totLX)} xem</div></div>
+    <div class="card" style="--card-clr:var(--teal)"><div class="card-lbl">KH Tiềm Năng</div><div class="card-val">${totKH}</div><div class="card-sub">/ ${tKH} KH · ${totCOC} đặt cọc</div></div>
+  </div>
+  <div class="cards-row c4">
+    <div class="card" style="--card-clr:var(--purple)"><div class="card-lbl">Bản ghi đã nhập</div><div class="card-val">${totalLogs}</div><div class="card-sub">tháng ${m}/${y}</div></div>
+    <div class="card" style="--card-clr:var(--amber)"><div class="card-lbl">Chi phí Ads</div><div class="card-val">${fmtN(totADS)}</div><div class="card-sub">VNĐ tháng này</div></div>
+    <div class="card" style="--card-clr:var(--green)"><div class="card-lbl">Lượt xem Live LK</div><div class="card-val">${fmtN(totLX)}</div><div class="card-sub">tất cả nền tảng</div></div>
+    <div class="card" style="--card-clr:var(--blue)"><div class="card-lbl">${isAdmin()?'Cửa hàng ĐẠT':'Trạng thái'}</div><div class="card-val">${isAdmin()?stRows.filter(r=>r.avg>=ex).length+'/'+stores.length:(sysAvg>=ex?'ĐẠT':'CHẬM')}</div><div class="card-sub">${isAdmin()?'đạt tiến độ':'so với kỳ vọng'}</div></div>
+  </div>
+  <div class="grid2">
+    <div>
+      <div class="sec-t"><span>📈 Tiến độ ${isAdmin()?'từng cửa hàng':'của cửa hàng'}</span><button class="btn btn-p sm" onclick="nav('entry')">+ Nhập</button></div>
+      <div class="tbl-wrap"><div class="scr-scroll"><table>
+        <thead><tr><th>#</th><th>Cửa hàng</th><th>Facebook</th><th>TikTok</th><th>Livestream</th><th>KHTN</th><th>TB</th><th>Trạng thái</th></tr></thead>
+        <tbody>${stRows.map((r,i)=>`<tr>
+          <td class="c" style="color:var(--text3);font-size:11px">${i+1}</td>
+          <td><strong>${r.s.name}</strong><br><span style="font-size:10px;color:var(--text3)">${r.s.code}</span></td>
+          <td>${r.tFb>0?`<span style="font-family:var(--mono);font-size:12px">${r.fb}/${r.tFb}</span>${pb(r.fb,r.tFb)}`:'<span style="color:var(--text3);font-size:11px">—</span>'}</td>
+          <td>${r.tTt>0?`<span style="font-family:var(--mono);font-size:12px">${r.tt}/${r.tTt}</span>${pb(r.tt,r.tTt)}`:'<span style="color:var(--text3);font-size:11px">—</span>'}</td>
+          <td>${r.tLv>0?`<span style="font-family:var(--mono);font-size:12px">${r.lv}/${r.tLv}</span>${pb(r.lv,r.tLv)}`:'<span style="color:var(--text3);font-size:11px">—</span>'}</td>
+          <td>${r.tKh>0?`<span style="font-family:var(--mono);font-size:12px">${r.kh}/${r.tKh}</span>${pb(r.kh,r.tKh)}`:'<span style="color:var(--text3);font-size:11px">—</span>'}</td>
+          <td>${pb(r.avg,100)}</td>
+          <td>${statusB(r.avg,100)}</td>
+        </tr>`).join('')}</tbody>
+      </table></div></div>
+    </div>
+    <div>
+      <div class="sec-t"><span>🏆 Xếp hạng tiến độ</span></div>
+      <div class="ch-wrap" style="height:${stores.length>4?320:200}px"><canvas id="chRank"></canvas></div>
+      <div class="sec-t"><span>📋 Hoạt động gần đây</span></div>
+      <div class="tbl-wrap"><table>
+        <thead><tr><th>Lúc</th><th>Nhân sự</th><th>Cửa hàng</th><th>Hạng mục</th></tr></thead>
+        <tbody>${recentLogs.map(l=>`<tr>
+          <td style="font-size:11px;color:var(--text3)">${fmtDt(l.timestamp)}</td>
+          <td style="font-size:12px">${l.staff||'—'}</td>
+          <td style="font-size:12px">${sname(l.storeId)}</td>
+          <td><span class="tag tb">${cname(l.categoryId)}</span></td>
+        </tr>`).join('')||'<tr><td colspan="4" style="text-align:center;padding:20px;color:var(--text3)">Chưa có dữ liệu</td></tr>'}</tbody>
+      </table></div>
+    </div>
+  </div>`;
+
+  setTimeout(()=>{
+    const rc=document.getElementById('chRank');if(!rc)return;
+    if(charts.rank)charts.rank.destroy();
+    charts.rank=new Chart(rc,{type:'bar',data:{
+      labels:stRows.map(r=>r.s.code),
+      datasets:[{label:'% HT',data:stRows.map(r=>r.avg),
+        backgroundColor:stRows.map(r=>r.avg>=ex?'rgba(63,185,80,.7)':r.avg>=ex*.7?'rgba(210,153,34,.7)':'rgba(248,81,73,.7)'),borderRadius:5}]
+    },options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false},tooltip:{callbacks:{label:c=>c.raw+'%'}}},
+      scales:{x:{ticks:{color:'#8b949e',font:{size:10}},grid:{color:'#21262d'}},
+              y:{ticks:{color:'#8b949e',callback:v=>v+'%'},grid:{color:'#21262d'},min:0,max:120}}}});
+  },80);
+}
+
+// ═══════════════════════════════════════════════
+// ENTRY
+// ═══════════════════════════════════════════════
+let eSelStore=null,eSelCat='CV01';
+function renderEntry(){
+  const stores=myStores();
+  if(!eSelStore||!stores.find(s=>s.id===eSelStore))eSelStore=stores[0]?.id||'CH01';
+  const today=new Date();
+  const todayStr=`${today.getFullYear()}-${String(today.getMonth()+1).padStart(2,'0')}-${String(today.getDate()).padStart(2,'0')}`;
+  const storeOpts=stores.map(s=>`<option value="${s.id}"${s.id===eSelStore?' selected':''}>${s.name}</option>`).join('');
+  const catOpts=DB.categories.map(c=>`<option value="${c.id}"${c.id===eSelCat?' selected':''}>${c.name} (${c.unit})</option>`).join('');
+  document.getElementById('p-entry').innerHTML=`
+  <div style="max-width:920px">
+  ${!isAdmin()?`<div class="alert alert-info">📍 Bạn đang nhập liệu cho: <strong>${sname(curUser?.storeId)}</strong></div>`:''}
+  <div class="f-card">
+    <h3>📋 Thông tin chung</h3>
+    <div class="fg c3f">
+      <div class="fr req"><label>Cửa hàng</label>
+        <select id="e-store" ${!isAdmin()?'disabled':''} onchange="eSelStore=this.value;updEP()">${storeOpts}</select>
+      </div>
+      <div class="fr req"><label>Nhân sự</label>
+        <input type="text" id="e-staff" placeholder="Họ và tên" value="${!isAdmin()?curUser?.name||'':''}">
+      </div>
+      <div class="fr"><label>Chức vụ</label>
+        <select id="e-role"><option>TVBH</option><option>CHT</option><option>KT</option><option>MKT</option><option>CHP</option></select>
+      </div>
+    </div>
+    <div class="fg c3f" style="margin-top:12px">
+      <div class="fr req"><label>Hạng mục</label>
+        <select id="e-cat" onchange="eSelCat=this.value;updEMetrics()">${catOpts}</select>
+      </div>
+      <div class="fr"><label>Nền tảng</label>
+        <select id="e-plat"><option>Facebook</option><option>TikTok</option><option>Zalo OA</option><option>YouTube</option><option>Website</option><option>Hotline</option><option>Khác</option></select>
+      </div>
+      <div class="fr req"><label>Ngày thực hiện</label>
+        <input type="date" id="e-date" value="${todayStr}">
+      </div>
+    </div>
+    <div class="fg" style="margin-top:12px">
+      <div class="fr"><label>Chi tiết công việc</label>
+        <textarea id="e-detail" placeholder="Mô tả nội dung, thời gian, nhân sự tham gia..."></textarea>
+      </div>
+      <div class="fr"><label>Link bài đăng / Video / Phiên live</label>
+        <input type="text" id="e-link" placeholder="https://...">
+      </div>
+    </div>
+  </div>
+  <div id="e-metrics"></div>
+  <div id="e-prev"></div>
+  <div style="display:flex;gap:12px;align-items:center">
+    <button class="btn btn-p" onclick="submitEntry()">💾 Lưu bản ghi</button>
+    <button class="btn btn-g" onclick="clrEntry()">🗑️ Xoá form</button>
+    <span style="font-size:12px;color:var(--text3)">Dữ liệu lưu tự động & chia sẻ ngay cho toàn đội</span>
+  </div>
+  </div>`;
+  updEMetrics();
+}
+function updEMetrics(){
+  const cat=document.getElementById('e-cat')?.value||eSelCat;
+  const isLV=cat==='CV01',isFB=cat==='CV02',isTT=cat==='CV03';
+  const isBH=cat==='CV04',isADS=cat==='CV07',isSTND=cat==='CV08',isKHTN=cat==='CV10';
+  const unit=DB.categories.find(c=>c.id===cat)?.unit||'bài';
+  let h=`<div class="f-card"><h3>📊 Chỉ số thực hiện</h3><div class="fg c4f">
+    <div class="fr"><label>Số ${unit}</label><input type="number" id="m-soBai" min="0" placeholder="0" onchange="updEP()"></div>`;
+  h+=(isLV||isTT||isFB)?`<div class="fr"><label>Lượt xem</label><input type="number" id="m-lx" min="0" placeholder="0"></div>`:'<div></div>';
+  h+=isLV?`<div class="fr"><label>CCU cao nhất</label><input type="number" id="m-ccu" min="0" placeholder="0"></div><div class="fr"><label>Watch Time TB (giây)</label><input type="number" id="m-wt" min="0" placeholder="0"></div>`:'<div></div><div></div>';
+  h+=`</div><div class="fg c4f" style="margin-top:8px">
+    <div class="fr"><label>Follower mới</label><input type="number" id="m-fl" min="0" placeholder="0"></div>
+    <div class="fr"><label>Comments</label><input type="number" id="m-cmt" min="0" placeholder="0"></div>
+    <div class="fr"><label>Likes / Tim</label><input type="number" id="m-like" min="0" placeholder="0"></div>
+    <div class="fr"><label>Shares</label><input type="number" id="m-share" min="0" placeholder="0"></div>
+  </div>`;
+  if(isBH||isKHTN||isLV){h+=`<div class="fg c4f" style="margin-top:8px">
+    <div class="fr"><label>Leads nhắn tin</label><input type="number" id="m-l1" min="0" placeholder="0" onchange="updEP()"></div>
+    <div class="fr"><label>Leads để SĐT</label><input type="number" id="m-l2" min="0" placeholder="0"></div>
+    <div class="fr"><label>Đặt cọc</label><input type="number" id="m-coc" min="0" placeholder="0"></div>
+    <div class="fr"><label>Mua xe</label><input type="number" id="m-xe" min="0" placeholder="0"></div>
+  </div><div class="fg c2f" style="margin-top:8px">
+    <div class="fr"><label>Doanh số online (VNĐ)</label><input type="number" id="m-ds" min="0" placeholder="0"></div>
+  </div>`;}
+  if(isADS||isLV){h+=`<div class="fg c2f" style="margin-top:8px">
+    <div class="fr"><label>Chi phí Ads (VNĐ)</label><input type="number" id="m-ads" min="0" placeholder="0"></div>
+  </div>`;}
+  if(isSTND||isFB||isTT){h+=`<div style="margin-top:12px;padding:12px;background:rgba(188,140,255,.07);border:1px solid rgba(188,140,255,.2);border-radius:var(--r)">
+    <div style="font-size:11px;font-weight:700;color:var(--purple);margin-bottom:10px">🎯 CHẤM ĐIỂM STND (Tiêu chuẩn nội dung)</div>
+    <div class="fg" style="grid-template-columns:repeat(5,1fr)">
+      <div class="fr"><label>Nội dung (max 25)</label><input type="number" id="m-dn" min="0" max="25" placeholder="0" onchange="calcT()"></div>
+      <div class="fr"><label>Hình ảnh (max 20)</label><input type="number" id="m-dha" min="0" max="20" placeholder="0" onchange="calcT()"></div>
+      <div class="fr"><label>Quy chuẩn (max 15)</label><input type="number" id="m-dqc" min="0" max="15" placeholder="0" onchange="calcT()"></div>
+      <div class="fr"><label>Sáng tạo (max 15)</label><input type="number" id="m-dst" min="0" max="15" placeholder="0" onchange="calcT()"></div>
+      <div class="fr"><label>Hiệu quả (max 25)</label><input type="number" id="m-dhq" min="0" max="25" placeholder="0" onchange="calcT()"></div>
+    </div>
+    <div id="stnd-t" style="margin-top:8px;font-size:13px;font-weight:700;color:var(--purple)">Tổng điểm: 0/100</div>
+  </div>`;}
+  h+='</div>';
+  document.getElementById('e-metrics').innerHTML=h;updEP();
+}
+function calcT(){
+  const tot=['m-dn','m-dha','m-dqc','m-dst','m-dhq'].reduce((s,id)=>s+gn(id),0);
+  const el=document.getElementById('stnd-t');if(!el)return;
+  const xl=tot>=85?'Xuất sắc':tot>=70?'Tốt':tot>=55?'Đạt':'Cần cải thiện';
+  const c=tot>=70?'var(--green)':tot>=55?'var(--amber)':'var(--red)';
+  el.innerHTML=`Tổng điểm: <span style="color:${c};font-size:17px">${tot}</span>/100 — <span style="color:${c}">${xl}</span>`;
+}
+function updEP(){
+  const box=document.getElementById('e-prev');if(!box)return;
+  const sid=g('e-store')||eSelStore;if(!sid){box.innerHTML='';return;}
+  const rows=[['CV01','Livestream','phiên','soBai'],['CV02','Facebook','bài','soBai'],['CV03','TikTok','video','soBai'],['CV10','KHTN','KH','leadsNhanTin']];
+  const cols=rows.filter(([cid])=>getT(sid,cid)>0).map(([cid,label,,field])=>{
+    const a=cid==='CV10'?sumF(sid,'leadsNhanTin'):sumL(sid,cid,'soBai');
+    const t=getT(sid,cid);
+    return`<div><div style="font-size:11px;color:var(--text3);margin-bottom:3px">${label}</div><div style="font-size:13px;font-weight:700">${a}<span style="color:var(--text3)">/${t}</span></div>${pb(a,t)}</div>`;
+  }).join('');
+  if(!cols){box.innerHTML='';return;}
+  box.innerHTML=`<div style="background:rgba(240,136,62,.06);border:1px solid rgba(240,136,62,.18);border-radius:var(--r2);padding:12px;margin-bottom:14px">
+    <div style="font-size:11px;font-weight:700;color:var(--accent);margin-bottom:8px">📍 Tiến độ hiện tại – ${sname(sid)}</div>
+    <div class="fg" style="grid-template-columns:repeat(auto-fit,minmax(100px,1fr))">${cols}</div>
+  </div>`;
+}
+function submitEntry(){
+  const staff=g('e-staff').trim();const store=g('e-store')||eSelStore;const cat=g('e-cat');const date=g('e-date');
+  if(!staff){toast('Vui lòng nhập tên nhân sự!','err');return;}
+  if(!date){toast('Vui lòng chọn ngày!','err');return;}
+  const d=new Date(date);
+  const sv=['m-dn','m-dha','m-dqc','m-dst','m-dhq'].map(id=>gn(id));
+  const diemTong=sv.reduce((a,b)=>a+b,0);
+  const rec={
+    id:uid(),timestamp:Date.now(),date,month:d.getMonth()+1,year:d.getFullYear(),
+    storeId:store,staff,role:g('e-role'),categoryId:cat,platform:g('e-plat'),
+    chiTiet:g('e-detail'),link:g('e-link'),
+    soBai:gn('m-soBai'),luotXem:gn('m-lx'),ccuMax:gn('m-ccu'),watchTime:gn('m-wt'),flMoi:gn('m-fl'),
+    comments:gn('m-cmt'),likes:gn('m-like'),shares:gn('m-share'),totalTuongTac:gn('m-cmt')+gn('m-like')+gn('m-share'),
+    leadsNhanTin:gn('m-l1'),leadsSdt:gn('m-l2'),leadsDatCoc:gn('m-coc'),leadsMuaXe:gn('m-xe'),
+    doanhSo:gn('m-ds'),chiPhiAds:gn('m-ads'),
+    diemND:sv[0],diemHA:sv[1],diemQC:sv[2],diemST:sv[3],diemHQ:sv[4],diemTong,
+    xepLoai:diemTong>0?(diemTong>=85?'Xuất sắc':diemTong>=70?'Tốt':diemTong>=55?'Đạt':'Cần cải thiện'):'',
+    ghiChu:''
+  };
+  const allZero=!rec.soBai&&!rec.luotXem&&!rec.totalTuongTac&&!rec.leadsNhanTin&&!rec.chiPhiAds&&!rec.diemTong;
+  if(allZero){toast('Vui lòng nhập ít nhất 1 chỉ số!','err');return;}
+  DB.dailyLogs.push(rec);saveDB();
+  toast(`✓ Đã lưu: ${sname(store)} – ${cname(cat)} ngày ${date}`,'ok');
+  clrEntry();updEP();updateLogBadge();
+}
+function clrEntry(){
+  ['e-staff','e-detail','e-link'].forEach(id=>{const el=document.getElementById(id);if(el)el.value='';});
+  ['m-soBai','m-lx','m-ccu','m-wt','m-fl','m-cmt','m-like','m-share','m-l1','m-l2','m-coc','m-xe','m-ds','m-ads','m-dn','m-dha','m-dqc','m-dst','m-dhq'].forEach(id=>{const el=document.getElementById(id);if(el)el.value='';});
+  calcT();
+}
+
+// ═══════════════════════════════════════════════
+// HISTORY
+// ═══════════════════════════════════════════════
+let hf={store:'',cat:'',q:''};
+function renderHistory(){
+  const storeOpts=`<option value="">Tất cả</option>`+(isAdmin()?DB.stores:myStores()).map(s=>`<option value="${s.id}">${s.name}</option>`).join('');
+  const catOpts=`<option value="">Tất cả hạng mục</option>`+DB.categories.map(c=>`<option value="${c.id}">${c.name}</option>`).join('');
+  let logs=DB.dailyLogs.filter(l=>l.month===curMonth&&l.year===curYear&&(isAdmin()||l.storeId===curUser?.storeId));
+  if(hf.store)logs=logs.filter(l=>l.storeId===hf.store);
+  if(hf.cat)logs=logs.filter(l=>l.categoryId===hf.cat);
+  if(hf.q){const q=hf.q.toLowerCase();logs=logs.filter(l=>(l.staff||'').toLowerCase().includes(q)||sname(l.storeId).toLowerCase().includes(q));}
+  logs=[...logs].reverse();
+  document.getElementById('p-history').innerHTML=`
+  <div class="fbar">
+    <input type="text" placeholder="🔍 Nhân sự, cửa hàng..." value="${hf.q}" oninput="hf.q=this.value;renderHistory()" style="width:200px">
+    <select onchange="hf.store=this.value;renderHistory()">${storeOpts}</select>
+    <select onchange="hf.cat=this.value;renderHistory()">${catOpts}</select>
+    <span style="margin-left:auto;font-size:12px;color:var(--text3)">${logs.length} bản ghi</span>
+    ${isAdmin()?`<button class="btn btn-d sm" onclick="if(confirm('Xoá tất cả bản ghi tháng ${curMonth}?')){DB.dailyLogs=DB.dailyLogs.filter(l=>!(l.month===curMonth&&l.year===curYear));saveDB();renderHistory();toast('Đã xoá','inf')}">🗑️ Xoá tháng</button>`:''}
+  </div>
+  ${logs.length===0?`<div class="empty"><div class="ei">📭</div><p>Chưa có dữ liệu tháng ${curMonth}/${curYear}</p></div>`:`
+  <div class="tbl-wrap"><div class="scr-scroll"><table>
+    <thead><tr><th>Lúc</th><th>Nhân sự</th><th>Cửa hàng</th><th>Hạng mục</th><th>Nền tảng</th><th>Ngày TH</th>
+      <th class="num">Số</th><th class="num">Lượt xem</th><th class="num">TT</th><th class="num">Leads</th>
+      <th class="num">Ads</th><th>Điểm</th><th>Chi tiết</th><th></th></tr></thead>
+    <tbody>${logs.map(l=>`<tr>
+      <td style="font-size:11px;color:var(--text3)">${fmtDt(l.timestamp)}</td>
+      <td><strong style="font-size:12px">${l.staff||'—'}</strong><br><span style="font-size:10px;color:var(--text3)">${l.role||''}</span></td>
+      <td style="font-size:12px">${sname(l.storeId)}</td>
+      <td><span class="tag tb">${cname(l.categoryId)}</span></td>
+      <td style="font-size:11px;color:var(--text3)">${l.platform||'—'}</td>
+      <td style="font-size:11px">${l.date||'—'}</td>
+      <td class="num">${l.soBai||'—'}</td>
+      <td class="num">${l.luotXem?fmtN(l.luotXem):'—'}</td>
+      <td class="num">${l.totalTuongTac||'—'}</td>
+      <td class="num">${l.leadsNhanTin||'—'}</td>
+      <td class="num">${l.chiPhiAds?fmtN(l.chiPhiAds):'—'}</td>
+      <td>${l.diemTong>0?`<span style="font-weight:700;color:${l.diemTong>=70?'var(--green)':l.diemTong>=55?'var(--amber)':'var(--red)'}">${l.diemTong}</span> <span style="font-size:10px;color:var(--text3)">${l.xepLoai||''}</span>`:'—'}</td>
+      <td style="max-width:120px;font-size:11px;color:var(--text3);overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${l.chiTiet||''}">${l.chiTiet||l.link||'—'}</td>
+      <td>${isAdmin()||l.storeId===curUser?.storeId?`<button class="btn btn-d sm" onclick="delLog('${l.id}')">✕</button>`:''}</td>
+    </tr>`).join('')}</tbody>
+  </table></div></div>`}`;
+}
+function delLog(id){if(!confirm('Xoá bản ghi này?'))return;DB.dailyLogs=DB.dailyLogs.filter(l=>l.id!==id);saveDB();renderHistory();updateLogBadge();toast('Đã xoá','inf');}
+
+// ═══════════════════════════════════════════════
+// KPI TARGETS + EXCEL IMPORT
+// ═══════════════════════════════════════════════
+let kpiTab='table';
+function renderKPI(){
+  const m=curMonth,y=curYear;
+  const storeOpts=DB.stores.map(s=>`<option value="${s.id}">${s.name}</option>`).join('');
+  const catOpts=DB.categories.map(c=>`<option value="${c.id}">${c.name}</option>`).join('');
+  const keyCats=['CV01','CV02','CV03','CV10','CV07'];
+  const kNames={CV01:'Live',CV02:'Facebook',CV03:'TikTok',CV10:'KHTN',CV07:'Ads'};
+
+  document.getElementById('p-kpi').innerHTML=`
+  <div class="stabs">
+    <button class="stab${kpiTab==='table'?' active':''}" onclick="kpiTab='table';renderKPI()">📊 Bảng chỉ tiêu</button>
+    ${isAdmin()?`<button class="stab${kpiTab==='edit'?' active':''}" onclick="kpiTab='edit';renderKPI()">✏️ Cập nhật thủ công</button>
+    <button class="stab${kpiTab==='excel'?' active':''}" onclick="kpiTab='excel';renderKPI()">📥 Nhập từ Excel</button>`:''}
+  </div>
+  <div id="kpi-tab"></div>`;
+
+  const kDiv=document.getElementById('kpi-tab');
+  const viewStores=myStores();
+
+  if(kpiTab==='table'){
+    kDiv.innerHTML=`
+    <div class="tbl-wrap">
+      <div class="tbl-bar"><h3>Bảng chỉ tiêu tháng ${m}/${y}</h3><span style="font-size:12px;color:var(--text3)">Kỳ vọng hôm nay: ${exPct()}%</span></div>
+      <div class="scr-scroll"><table>
+        <thead><tr><th>STT</th><th>Cửa hàng</th>
+          ${keyCats.map(id=>`<th>${kNames[id]}</th>`).join('')}
+        </tr></thead>
+        <tbody>${viewStores.map((s,idx)=>{
+          const cells=keyCats.map(cid=>{
+            const t=getT(s.id,cid,m,y);const a=cid==='CV07'?sumF(s.id,'chiPhiAds',m,y):cid==='CV10'?sumF(s.id,'leadsNhanTin',m,y):sumL(s.id,cid,'soBai',m,y);
+            if(t===0)return`<td style="color:var(--text3);text-align:center;font-size:11px">—</td>`;
+            const p2=pct(a,t),c=p2>=100?'var(--blue)':p2>=exPct()?'var(--green)':p2>=exPct()*.7?'var(--amber)':'var(--red)';
+            return`<td><span style="font-family:var(--mono);font-size:12px;font-weight:600">${cid==='CV07'?fmtN(a):a}</span><span style="color:var(--text3);font-size:11px">/${cid==='CV07'?fmtN(t):t}</span><div class="pb" style="width:70px;margin-top:3px"><div class="pb-fill" style="width:${Math.min(p2,100)}%;background:${c}"></div></div><span style="font-size:10px;color:${c}">${p2}%</span></td>`;
+          }).join('');
+          return`<tr><td class="c" style="color:var(--text3);font-size:12px">${s.idx||idx+1}</td><td><strong>${s.name}</strong><br><span style="font-size:10px;color:var(--text3)">${s.code}</span></td>${cells}</tr>`;
+        }).join('')}</tbody>
+      </table></div>
+    </div>`;
+  } else if(kpiTab==='edit'&&isAdmin()){
+    kDiv.innerHTML=`
+    <div class="c2" style="display:grid;gap:14px">
+      <div class="f-card">
+        <h3>✏️ Thêm / Cập nhật chỉ tiêu</h3>
+        <div class="fg c2f">
+          <div class="fr"><label>Cửa hàng</label><select id="ki-store">${storeOpts}</select></div>
+          <div class="fr"><label>Hạng mục</label><select id="ki-cat">${catOpts}</select></div>
+          <div class="fr"><label>Chỉ tiêu (cả tháng)</label><input type="number" id="ki-t" min="0" placeholder="0"></div>
+          <div class="fr"><label>Nhân sự phụ trách</label><input type="text" id="ki-staff" placeholder="(để trống = cả CH)"></div>
+          <div class="fr"><label>Tháng</label><input type="number" id="ki-m" value="${m}" min="1" max="12"></div>
+          <div class="fr"><label>Năm</label><input type="number" id="ki-y" value="${y}" min="2024"></div>
+        </div>
+        <div style="margin-top:12px;display:flex;gap:10px">
+          <button class="btn btn-p" onclick="saveKPI()">💾 Lưu</button>
+          <button class="btn btn-g" onclick="if(confirm('Nạp chỉ tiêu mặc định T5?')){DB.kpiTargets=[...TARGETS_DEF];saveDB();renderKPI();toast('Đã nạp mặc định','inf')}">🔄 Nạp mặc định T5</button>
+        </div>
+      </div>
+      <div class="f-card">
+        <h3>📋 Xoá chỉ tiêu theo tháng</h3>
+        <p style="font-size:13px;color:var(--text2);margin-bottom:12px">Xoá toàn bộ chỉ tiêu của một tháng để nhập lại.</p>
+        <div class="fg c2f">
+          <div class="fr"><label>Tháng</label><input type="number" id="del-m" value="${m}" min="1" max="12"></div>
+          <div class="fr"><label>Năm</label><input type="number" id="del-y" value="${y}" min="2024"></div>
+        </div>
+        <button class="btn btn-d" style="margin-top:12px" onclick="delKPIMonth()">🗑️ Xoá chỉ tiêu tháng này</button>
+      </div>
+    </div>`;
+  } else if(kpiTab==='excel'&&isAdmin()){
+    renderKPIExcelTab(kDiv);
+  }
+}
+function saveKPI(){
+  const sid=g('ki-store'),cid=g('ki-cat'),t=parseInt(g('ki-t'))||0,staff=g('ki-staff');
+  const m=parseInt(g('ki-m'))||curMonth,y=parseInt(g('ki-y'))||curYear;
+  const idx=DB.kpiTargets.findIndex(x=>x.storeId===sid&&x.categoryId===cid&&x.month===m&&x.year===y);
+  if(idx>=0)DB.kpiTargets[idx]={...DB.kpiTargets[idx],target:t,staff};
+  else DB.kpiTargets.push({id:uid(),year:y,month:m,storeId:sid,categoryId:cid,target:t,staff,note:''});
+  saveDB();toast(`Đã lưu: ${sname(sid)} – ${cname(cid)} = ${t}`,'ok');renderKPI();
+}
+function delKPIMonth(){
+  const m=parseInt(g('del-m'))||curMonth,y=parseInt(g('del-y'))||curYear;
+  if(!confirm(`Xoá tất cả chỉ tiêu tháng ${m}/${y}?`))return;
+  DB.kpiTargets=DB.kpiTargets.filter(t=>!(t.month===m&&t.year===y));
+  saveDB();toast('Đã xoá chỉ tiêu tháng','inf');renderKPI();
+}
+
+// ── KPI EXCEL IMPORT ──
+let kpiImportPreview=null;
+function renderKPIExcelTab(el){
+  el.innerHTML=`
+  <div class="f-card">
+    <h3>📥 Nhập chỉ tiêu hàng loạt từ file Excel</h3>
+    <div class="alert alert-info" style="margin-bottom:14px">
+      <strong>Định dạng file Excel chuẩn:</strong><br>
+      Hàng đầu tiên = tiêu đề. Mỗi hàng = 1 cửa hàng.<br>
+      Cột bắt buộc: <strong>STT</strong> (số thứ tự) + <strong>Tên đơn vị</strong> (tên cửa hàng) + các cột chỉ tiêu.<br>
+      Tên cột chỉ tiêu nhận diện: <em>Live / Livestream, Facebook / FB, TikTok / TT, KHTN / KH tiềm năng, Ads / Chi phí</em>
+    </div>
+    <div style="display:flex;gap:12px;align-items:flex-start;flex-wrap:wrap;margin-bottom:16px">
+      <div>
+        <div style="font-size:12px;color:var(--text3);margin-bottom:8px">1. Chọn tháng áp dụng</div>
+        <div style="display:flex;gap:8px">
+          <div class="fr"><label>Tháng</label><input type="number" id="xi-m" value="${curMonth}" min="1" max="12" style="width:80px"></div>
+          <div class="fr"><label>Năm</label><input type="number" id="xi-y" value="${curYear}" min="2024" style="width:90px"></div>
+        </div>
+      </div>
+      <div>
+        <div style="font-size:12px;color:var(--text3);margin-bottom:8px">2. Upload file Excel</div>
+        <input type="file" id="xi-file" accept=".xlsx,.xls" style="display:none" onchange="parseKPIExcel(event)">
+        <button class="btn btn-b" onclick="document.getElementById('xi-file').click()">📂 Chọn file Excel</button>
+      </div>
+      <div>
+        <div style="font-size:12px;color:var(--text3);margin-bottom:8px">3. Tải mẫu file</div>
+        <button class="btn btn-g" onclick="downloadKPITemplate()">⬇️ Tải file mẫu .xlsx</button>
+      </div>
+    </div>
+    <div id="xi-result"></div>
+  </div>`;
+}
+
+function downloadKPITemplate(){
+  const rows=[
+    ['STT','Tên đơn vị','Livestream (phiên)','Facebook (bài)','TikTok (video)','KHTN (KH)','Ads (VNĐ)'],
+    ...DB.stores.map((s,i)=>[s.idx||i+1,s.name,'','','','','']),
+  ];
+  const ws=XLSX.utils.aoa_to_sheet(rows);
+  ws['!cols']=[{wch:5},{wch:20},{wch:18},{wch:16},{wch:16},{wch:14},{wch:14}];
+  const wb=XLSX.utils.book_new();XLSX.utils.book_append_sheet(wb,ws,'KPI_Template');
+  XLSX.writeFile(wb,`KPI_Template_T${curMonth}_${curYear}.xlsx`);
+  toast('Đã tải file mẫu','ok');
+}
+
+// Column keyword matchers
+const COL_KEYS={
+  CV01:['live','livestream','phiên live','so phien'],
+  CV02:['facebook','fb','bai fb','bai dang','bài đăng'],
+  CV03:['tiktok','tt','video tt','video tiktok'],
+  CV10:['khtn','kh tiem','kh tiềm','khách hàng tiềm','so kh'],
+  CV07:['ads','chi phi','quảng cáo','quang cao','ngân sách'],
+  CV04:['bhol','ban hang online','leads','so leads'],
+  CV05:['giao xe','so xe'],
+  CV06:['dao tao','đào tạo','so buoi'],
+};
+function matchCol(header){
+  const h=(header||'').toString().toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g,'');
+  for(const[cid,keys]of Object.entries(COL_KEYS)){
+    if(keys.some(k=>h.includes(k.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g,''))))return cid;
+  }
+  return null;
+}
+function matchStore(name,idx){
+  if(!name&&!idx)return null;
+  const nm=(name||'').toString().trim().toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g,'');
+  // 1. Try exact IDX match first
+  if(idx){const byIdx=DB.stores.find(s=>(s.idx||0)===parseInt(idx));if(byIdx)return byIdx;}
+  // 2. Exact name
+  let found=DB.stores.find(s=>s.name.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g,'')===nm);
+  if(found)return found;
+  // 3. Code match
+  found=DB.stores.find(s=>s.code.toLowerCase()===nm||nm.includes(s.code.toLowerCase()));if(found)return found;
+  // 4. Partial name match (longest match wins)
+  const candidates=DB.stores.filter(s=>nm.includes(s.name.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g,'').replace('hưng thịnh ','').replace('ht ',''))||s.name.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g,'').replace('hưng thịnh ','').replace('ht ','').split(' ').every(w=>nm.includes(w)));
+  if(candidates.length===1)return candidates[0];
+  // 5. Last try: contains any key word
+  found=DB.stores.find(s=>{const sn=s.name.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g,'');return nm.includes(sn)||sn.includes(nm);});
+  return found||null;
+}
+
+function parseKPIExcel(e){
+  const file=e.target.files?.[0];if(!file)return;
+  const m=parseInt(g('xi-m'))||curMonth,y=parseInt(g('xi-y'))||curYear;
+  const reader=new FileReader();
+  reader.onload=ev=>{
+    try{
+      const wb=XLSX.read(ev.target.result,{type:'array'});
+      const ws=wb.Sheets[wb.SheetNames[0]];
+      const rows=XLSX.utils.sheet_to_json(ws,{header:1,defval:''});
+      if(rows.length<2){toast('File không có dữ liệu!','err');return;}
+
+      // Find header row (first row with "STT" or "Tên")
+      let headerRowIdx=0;
+      for(let i=0;i<Math.min(5,rows.length);i++){
+        const r=rows[i].map(c=>(c||'').toString().toLowerCase());
+        if(r.some(c=>c.includes('stt')||c.includes('tên đơn vị')||c.includes('ten don vi'))){headerRowIdx=i;break;}
+      }
+      const headers=rows[headerRowIdx];
+
+      // Map columns
+      let sttCol=-1,nameCol=-1;
+      const catCols={};// cid -> colIdx
+      headers.forEach((h,i)=>{
+        const hn=(h||'').toString().toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g,'');
+        if(hn==='stt'||hn==='so thu tu'||hn==='số thứ tự')sttCol=i;
+        else if(hn.includes('ten don vi')||hn.includes('tên đơn vị')||hn.includes('cua hang')||hn.includes('cửa hàng')||hn==='ten'||hn==='đơn vị')nameCol=i;
+        else{const cid=matchCol(h);if(cid&&!catCols[cid])catCols[cid]=i;}
+      });
+      if(nameCol===-1&&sttCol===-1){
+        document.getElementById('xi-result').innerHTML=`<div class="alert alert-warn">⚠️ Không tìm thấy cột "STT" hoặc "Tên đơn vị" trong file. Hãy đảm bảo file có tiêu đề đúng định dạng.</div>`;
+        return;
+      }
+
+      // Parse data rows
+      const preview=[];
+      const dataRows=rows.slice(headerRowIdx+1).filter(r=>r.some(c=>c!==''));
+      for(const row of dataRows){
+        const idx=sttCol>=0?parseInt(row[sttCol])||null:null;
+        const name=nameCol>=0?(row[nameCol]||'').toString().trim():null;
+        if(!idx&&!name)continue;
+        if(name&&(name.toLowerCase().includes('tổng')||name.toLowerCase().includes('ghi chú')))continue;
+        const store=matchStore(name,idx);
+        const targets={};
+        for(const[cid,ci]of Object.entries(catCols)){const v=parseInt(row[ci]);if(!isNaN(v)&&v>0)targets[cid]=v;}
+        preview.push({idx,name,store,targets,matched:!!store});
+      }
+
+      kpiImportPreview={preview,m,y,catCols,headers};
+      renderKPIPreview(preview,m,y,catCols,headers);
+    }catch(err){document.getElementById('xi-result').innerHTML=`<div class="alert alert-warn">❌ Lỗi đọc file: ${err.message}</div>`;toast('Lỗi đọc file','err');}
+  };
+  reader.readAsArrayBuffer(file);
+  e.target.value='';
+}
+
+function renderKPIPreview(preview,m,y,catCols,headers){
+  const matched=preview.filter(r=>r.matched);
+  const unmatched=preview.filter(r=>!r.matched);
+  const catIds=Object.keys(catCols);
+  let html=`
+  <div class="alert ${matched.length>0?'alert-ok':'alert-warn'}" style="margin-bottom:12px">
+    ✅ Tìm thấy: <strong>${matched.length}</strong> cửa hàng khớp &nbsp;|&nbsp; 
+    ⚠️ Không khớp: <strong>${unmatched.length}</strong> hàng
+    ${unmatched.length>0?`<br>Hàng không khớp: ${unmatched.map(r=>`<em>${r.idx||''}. ${r.name||'?'}</em>`).join(', ')}`:''}
+  </div>
+  <div class="tbl-wrap" style="margin-bottom:12px"><div class="scr-scroll"><table>
+    <thead><tr>
+      <th>STT</th><th>Tên trong file</th><th>Cửa hàng khớp</th>
+      ${catIds.map(cid=>`<th>${cname(cid)}</th>`).join('')}
+      <th>Trạng thái</th>
+    </tr></thead>
+    <tbody>${preview.map(r=>`<tr>
+      <td class="c" style="font-size:12px;color:var(--text3)">${r.idx||'—'}</td>
+      <td style="font-size:12px">${r.name||'—'}</td>
+      <td>${r.store?`<strong style="color:var(--green)">${r.store.name}</strong> <span style="font-size:10px;color:var(--text3)">${r.store.code}</span>`:`<span style="color:var(--red)">Không tìm thấy</span>
+        <select style="margin-left:6px;background:var(--bg3);border:1px solid var(--amber);border-radius:4px;padding:2px 6px;color:var(--text);font-size:11px" onchange="overrideMatch(${preview.indexOf(r)},this.value)">
+          <option value="">Chọn thủ công...</option>
+          ${DB.stores.map(s=>`<option value="${s.id}">${s.name}</option>`).join('')}
+        </select>`}</td>
+      ${catIds.map(cid=>`<td class="num">${r.targets[cid]!==undefined?`<strong>${r.targets[cid]}</strong>`:'<span style="color:var(--text3)">—</span>'}</td>`).join('')}
+      <td>${r.matched?'<span class="badge bg">✓ Khớp</span>':'<span class="badge br">✗ Chưa khớp</span>'}</td>
+    </tr>`).join('')}</tbody>
+  </table></div></div>`;
+
+  const hasData=matched.length>0;
+  html+=`<div style="display:flex;gap:10px;align-items:center">
+    <button class="btn btn-p" ${!hasData?'disabled':''} onclick="confirmKPIImport()">✅ Xác nhận nhập ${matched.length} cửa hàng (T${m}/${y})</button>
+    <button class="btn btn-g" onclick="kpiImportPreview=null;document.getElementById('xi-result').innerHTML=''">✕ Huỷ</button>
+    <span style="font-size:12px;color:var(--text3)">Sẽ ghi đè chỉ tiêu hiện có của tháng ${m}/${y}</span>
+  </div>`;
+  document.getElementById('xi-result').innerHTML=html;
+}
+
+function overrideMatch(idx,storeId){
+  if(!kpiImportPreview||!storeId)return;
+  const store=DB.stores.find(s=>s.id===storeId);
+  if(!store)return;
+  kpiImportPreview.preview[idx].store=store;
+  kpiImportPreview.preview[idx].matched=true;
+  renderKPIPreview(kpiImportPreview.preview,kpiImportPreview.m,kpiImportPreview.y,kpiImportPreview.catCols,kpiImportPreview.headers);
+}
+
+function confirmKPIImport(){
+  if(!kpiImportPreview)return;
+  const{preview,m,y}=kpiImportPreview;
+  let count=0;
+  for(const row of preview){
+    if(!row.matched||!row.store)continue;
+    for(const[cid,t]of Object.entries(row.targets)){
+      const idx=DB.kpiTargets.findIndex(x=>x.storeId===row.store.id&&x.categoryId===cid&&x.month===m&&x.year===y);
+      if(idx>=0)DB.kpiTargets[idx].target=t;
+      else DB.kpiTargets.push({id:uid(),year:y,month:m,storeId:row.store.id,categoryId:cid,target:t,staff:'',note:''});
+      count++;
+    }
+  }
+  saveDB();kpiImportPreview=null;
+  toast(`✓ Đã cập nhật ${count} chỉ tiêu cho ${preview.filter(r=>r.matched).length} cửa hàng (T${m}/${y})`,'ok');
+  kpiTab='table';renderKPI();
+}
+
+// ═══════════════════════════════════════════════
+// USERS (Admin only)
+// ═══════════════════════════════════════════════
+function renderUsers(){
+  if(!isAdmin()){document.getElementById('p-users').innerHTML='<div class="alert alert-warn">⛔ Không có quyền truy cập</div>';return;}
+
+  // ── Phân loại đúng 3 nhóm ──
+  // pending  = chưa được duyệt lần nào: active===false VÀ approved!==true
+  // active   = đang hoạt động: active===true VÀ id!=='admin'
+  // locked   = đã bị khoá sau khi từng active: active===false VÀ approved===true
+  const pending = DB.users.filter(u => u.active===false && u.approved!==true && u.role!=='admin');
+  const active  = DB.users.filter(u => u.active===true  && u.id!=='admin');
+  const locked  = DB.users.filter(u => u.active===false && u.approved===true && u.role!=='admin');
+
+  const el = document.getElementById('p-users');
+  el.innerHTML=`
+  ${pending.length>0?`<div class="alert alert-warn" style="margin-bottom:16px">
+    <span class="pending-dot"></span><strong>${pending.length} tài khoản đang chờ phê duyệt</strong>
+  </div>`:''}
+
+  ${pending.length>0?`<div class="sec-t"><span>⏳ Chờ phê duyệt (${pending.length})</span></div>
+  <div class="tbl-wrap" style="margin-bottom:20px"><table>
+    <thead><tr><th>Họ tên</th><th>Username</th><th>Đơn vị</th><th>Đăng ký lúc</th><th>Thao tác</th></tr></thead>
+    <tbody>${pending.map(u=>`<tr>
+      <td><strong>${u.name}</strong></td>
+      <td><span class="tag tb">${u.username}</span></td>
+      <td>${sname(u.storeId)}</td>
+      <td style="font-size:11px;color:var(--text3)">${fmtDt(u.createdAt)}</td>
+      <td style="display:flex;gap:6px">
+        <button class="btn btn-s sm" onclick="approveUser('${u.id}')">✓ Phê duyệt</button>
+        <button class="btn btn-d sm" onclick="rejectUser('${u.id}')">✕ Từ chối</button>
+      </td>
+    </tr>`).join('')}</tbody>
+  </table></div>`:'<div style="color:var(--text3);font-size:13px;margin-bottom:16px;padding:10px 14px;background:var(--bg3);border-radius:var(--r)">✅ Không có tài khoản nào đang chờ duyệt.</div>'}
+
+  <div class="sec-t"><span>👥 Tài khoản hoạt động</span>
+    <button class="btn btn-p sm" onclick="showAddUserModal()">+ Thêm user</button>
+  </div>
+  <div class="tbl-wrap"><table>
+    <thead><tr><th>Họ tên</th><th>Username</th><th>Vai trò</th><th>Đơn vị</th><th>Trạng thái</th><th>Thao tác</th></tr></thead>
+    <tbody>
+    <tr>
+      <td><strong>Quản lý MKT</strong></td>
+      <td><span class="tag tp">admin</span></td>
+      <td><span class="badge bp">👑 Admin</span></td>
+      <td style="color:var(--text3)">Toàn hệ thống</td>
+      <td><span class="badge bg">● Online</span></td>
+      <td><button class="btn btn-g sm" onclick="changeAdminPwd()">🔑 Đổi mật khẩu</button></td>
+    </tr>
+    ${active.map(u=>`<tr>
+      <td><strong>${u.name}</strong></td>
+      <td><span class="tag tb">${u.username}</span></td>
+      <td><span class="badge bb">👤 User</span></td>
+      <td>${sname(u.storeId)}</td>
+      <td><span class="badge bg">● Active</span></td>
+      <td style="display:flex;gap:6px">
+        <button class="btn btn-g sm" onclick="editUserStore('${u.id}')">✏️ Đổi CH</button>
+        <button class="btn btn-g sm" onclick="resetUserPwd('${u.id}')">🔑 Đặt lại MK</button>
+        <button class="btn btn-d sm" onclick="deactivateUser('${u.id}')">🚫 Khoá</button>
+      </td>
+    </tr>`).join('')}
+    ${locked.map(u=>`<tr style="opacity:.6">
+      <td><strong>${u.name}</strong></td>
+      <td><span class="tag">${u.username}</span></td>
+      <td><span class="badge bb">👤 User</span></td>
+      <td>${sname(u.storeId)}</td>
+      <td><span class="badge br">● Bị khoá</span></td>
+      <td><button class="btn btn-s sm" onclick="approveUser('${u.id}')">🔓 Mở khoá</button></td>
+    </tr>`).join('')}
+    </tbody>
+  </table></div>
+
+  <div class="sec-t" style="margin-top:8px"><span>ℹ️ Ghi chú phân quyền</span></div>
+  <div class="f-card">
+    <div class="fg c2f">
+      <div><span class="badge bp" style="margin-bottom:8px;font-size:12px">👑 Admin</span>
+        <ul style="list-style:disc;padding-left:18px;font-size:13px;color:var(--text2);line-height:1.8">
+          <li>Xem Dashboard toàn hệ thống (tất cả 12 CH)</li>
+          <li>Nhập liệu cho bất kỳ cửa hàng nào</li>
+          <li>Quản lý chỉ tiêu KPI + nhập từ Excel</li>
+          <li>Phê duyệt/khoá tài khoản người dùng</li>
+          <li>Xuất báo cáo, cấu hình hệ thống</li>
+        </ul>
+      </div>
+      <div><span class="badge bb" style="margin-bottom:8px;font-size:12px">👤 User đơn vị</span>
+        <ul style="list-style:disc;padding-left:18px;font-size:13px;color:var(--text2);line-height:1.8">
+          <li>Xem Dashboard riêng của cửa hàng mình</li>
+          <li>Nhập liệu <strong>chỉ cho cửa hàng được phân</strong></li>
+          <li>Xem lịch sử báo cáo của cửa hàng mình</li>
+          <li>Xem chỉ tiêu KPI được giao</li>
+          <li>Không xem/sửa dữ liệu cửa hàng khác</li>
+        </ul>
+      </div>
+    </div>
+  </div>`;
+}
+function approveUser(id){
+  const u=DB.users.find(x=>x.id===id);
+  if(!u)return;
+  u.active=true;
+  u.approved=true; // đánh dấu đã từng được duyệt
+  saveDB();
+  renderUsers();
+  buildSidebar();
+  updateBellBadge();
+  toast(`✅ Đã phê duyệt: ${u.name}`,'ok');
+}
+function rejectUser(id){
+  if(!confirm('Từ chối và xoá yêu cầu đăng ký này?'))return;
+  DB.users=DB.users.filter(u=>u.id!==id);
+  saveDB();
+  renderUsers();
+  buildSidebar();
+  updateBellBadge();
+  toast('Đã từ chối và xoá yêu cầu','inf');
+}
+function deactivateUser(id){
+  if(!confirm('Khoá tài khoản này? Người dùng sẽ không đăng nhập được.'))return;
+  const u=DB.users.find(x=>x.id===id);
+  if(!u)return;
+  u.active=false;
+  u.approved=true; // giữ approved=true để phân biệt với pending
+  saveDB();
+  renderUsers();
+  buildSidebar();
+  updateBellBadge();
+  toast(`🚫 Đã khoá: ${u.name}`,'warn');
+}
+function changeAdminPwd(){
+  const np=prompt('Nhập mật khẩu mới cho Admin:');
+  if(!np||np.length<6){if(np!==null)alert('Mật khẩu tối thiểu 6 ký tự!');return;}
+  DB.users.find(u=>u.id==='admin').password=np;saveDB();toast('Đã đổi mật khẩu admin','ok');
+}
+function resetUserPwd(id){
+  const u=DB.users.find(x=>x.id===id);if(!u)return;
+  const np=prompt(`Đặt lại mật khẩu cho ${u.name}:`);
+  if(!np||np.length<6){if(np!==null)alert('Mật khẩu tối thiểu 6 ký tự!');return;}
+  u.password=np;saveDB();toast(`Đã đặt lại mật khẩu cho ${u.name}`,'ok');
+}
+function editUserStore(id){
+  const u=DB.users.find(x=>x.id===id);if(!u)return;
+  const opts=DB.stores.map(s=>`${s.idx||'?'} - ${s.name} (${s.id})`).join('\n');
+  const storeId=prompt(`Đổi cửa hàng cho ${u.name}.\nDanh sách ID:\n${opts}\n\nNhập Mã CH mới (VD: CH01):`);
+  if(!storeId)return;
+  if(!DB.stores.find(s=>s.id===storeId)){alert('Mã CH không tồn tại!');return;}
+  u.storeId=storeId;saveDB();renderUsers();toast(`Đã cập nhật: ${u.name} → ${sname(storeId)}`,'ok');
+}
+function showAddUserModal(){
+  const storeOpts=DB.stores.map(s=>`<option value="${s.id}">${s.name}</option>`).join('');
+  const ov=document.createElement('div');ov.className='ov';
+  ov.innerHTML=`<div class="modal">
+    <h2>➕ Thêm người dùng mới</h2>
+    <div class="fg c2f">
+      <div class="fr"><label>Họ tên</label><input type="text" id="au-name" placeholder="Nguyễn Văn A"></div>
+      <div class="fr"><label>Username</label><input type="text" id="au-user" placeholder="username"></div>
+      <div class="fr"><label>Mật khẩu</label><input type="password" id="au-pass" placeholder="Tối thiểu 6 ký tự"></div>
+      <div class="fr"><label>Cửa hàng</label><select id="au-store">${storeOpts}</select></div>
+    </div>
+    <div class="modal-foot">
+      <button class="btn btn-g" onclick="this.closest('.ov').remove()">Huỷ</button>
+      <button class="btn btn-p" onclick="addUserByAdmin(this)">Tạo tài khoản</button>
+    </div>
+  </div>`;
+  document.body.appendChild(ov);
+}
+function addUserByAdmin(btn){
+  const name    = g('au-name').trim();
+  const username= g('au-user').trim().toLowerCase();
+  const pass    = g('au-pass');
+  const storeId = g('au-store');
+  if(!name||!username||!pass){toast('Điền đầy đủ thông tin!','err');return;}
+  if(pass.length<6){toast('Mật khẩu tối thiểu 6 ký tự!','err');return;}
+  if(!/^[a-zA-Z0-9_]+$/.test(username)){toast('Username chỉ dùng chữ cái, số, dấu gạch dưới!','err');return;}
+  if(DB.users.find(u=>u.username.trim().toLowerCase()===username)){toast('Username đã tồn tại!','err');return;}
+  DB.users.push({id:'u_'+Date.now(),username,password:pass,name,role:'user',storeId,active:true,approved:true,createdAt:Date.now()});
+  saveDB();
+  btn.closest('.ov').remove();
+  renderUsers();
+  buildSidebar();
+  updateBellBadge();
+  toast(`✅ Đã tạo tài khoản: ${name}`,'ok');
+}
+
+// ═══════════════════════════════════════════════
+// CONFIG (Admin only)
+// ═══════════════════════════════════════════════
+function renderConfig(){
+  if(!isAdmin()){return;}
+  document.getElementById('p-config').innerHTML=`
+  <div class="stabs">
+    <button class="stab${configTab==='stores'?' active':''}" onclick="configTab='stores';renderConfig()">🏪 Cửa hàng</button>
+    <button class="stab${configTab==='cats'?' active':''}" onclick="configTab='cats';renderConfig()">📂 Hạng mục</button>
+    <button class="stab${configTab==='reset'?' active':''}" onclick="configTab='reset';renderConfig()">⚠️ Reset</button>
+  </div>
+  <div id="cfg-tab"></div>`;
+  const d=document.getElementById('cfg-tab');
+  if(configTab==='stores'){
+    d.innerHTML=`
+    <div class="f-card">
+      <h3>➕ Thêm cửa hàng</h3>
+      <div class="fg" style="grid-template-columns:1fr 1fr 1fr 1fr 80px">
+        <div class="fr"><label>Mã CH</label><input type="text" id="cs-id" placeholder="CH13"></div>
+        <div class="fr"><label>Tên cửa hàng</label><input type="text" id="cs-name" placeholder="Tên CH"></div>
+        <div class="fr"><label>Mã tắt</label><input type="text" id="cs-code" placeholder="LB2"></div>
+        <div class="fr"><label>Khu vực</label><input type="text" id="cs-area" placeholder="TP Thái Bình"></div>
+        <div class="fr"><label>STT</label><input type="number" id="cs-idx" placeholder="13"></div>
+      </div>
+      <button class="btn btn-p" style="margin-top:12px" onclick="addStore()">➕ Thêm</button>
+    </div>
+    <div class="tbl-wrap"><table>
+      <thead><tr><th>STT</th><th>Mã</th><th>Tên</th><th>Mã tắt</th><th>Khu vực</th><th></th></tr></thead>
+      <tbody>${DB.stores.map(s=>`<tr>
+        <td class="c" style="color:var(--accent);font-family:var(--mono);font-weight:700">${s.idx||'—'}</td>
+        <td><strong style="color:var(--accent)">${s.id}</strong></td>
+        <td>${s.name}</td><td><span class="tag to">${s.code}</span></td>
+        <td style="color:var(--text3)">${s.area||'—'}</td>
+        <td><button class="btn btn-d sm" onclick="delStore('${s.id}')">✕</button></td>
+      </tr>`).join('')}</tbody>
+    </table></div>`;
+  } else if(configTab==='cats'){
+    d.innerHTML=`
+    <div class="f-card">
+      <h3>➕ Thêm hạng mục</h3>
+      <div class="fg c4f">
+        <div class="fr"><label>Mã</label><input type="text" id="cc-id" placeholder="CV11"></div>
+        <div class="fr"><label>Tên</label><input type="text" id="cc-name" placeholder="Tên công việc"></div>
+        <div class="fr"><label>Đơn vị đo</label><input type="text" id="cc-unit" placeholder="Bài/Phiên..."></div>
+        <div class="fr"><label>Phạm vi</label><input type="text" id="cc-scope" placeholder="Đơn vị/BHOL/MKT"></div>
+      </div>
+      <button class="btn btn-p" style="margin-top:12px" onclick="addCat()">➕ Thêm</button>
+    </div>
+    <div class="tbl-wrap"><table>
+      <thead><tr><th>Mã</th><th>Tên</th><th>Đơn vị</th><th>Phạm vi</th><th></th></tr></thead>
+      <tbody>${DB.categories.map(c=>`<tr>
+        <td><strong style="color:var(--green)">${c.id}</strong></td>
+        <td>${c.name}</td><td><span class="tag tb">${c.unit}</span></td>
+        <td style="color:var(--text3)">${c.scope||'—'}</td>
+        <td><button class="btn btn-d sm" onclick="delCat('${c.id}')">✕</button></td>
+      </tr>`).join('')}</tbody>
+    </table></div>`;
+  } else if(configTab==='reset'){
+    d.innerHTML=`
+    <div class="f-card">
+      <h3>⚠️ Quản lý dữ liệu hệ thống</h3>
+      <div class="c2" style="display:grid;gap:12px;margin-top:4px">
+        <div style="background:var(--bg3);padding:14px;border-radius:var(--r);border:1px solid var(--border)">
+          <div style="font-weight:700;margin-bottom:6px">🗑️ Xoá Daily Log tháng hiện tại</div>
+          <div style="font-size:12px;color:var(--text3);margin-bottom:10px">Chỉ xoá dữ liệu nhập liệu, không ảnh hưởng chỉ tiêu KPI.</div>
+          <button class="btn btn-d sm" onclick="if(confirm('Xoá toàn bộ Daily Log tháng ${curMonth}?')){DB.dailyLogs=DB.dailyLogs.filter(l=>!(l.month===curMonth&&l.year===curYear));saveDB();toast('Đã xoá','inf')}">Xoá Log tháng ${curMonth}</button>
+        </div>
+        <div style="background:var(--bg3);padding:14px;border-radius:var(--r);border:1px solid var(--border)">
+          <div style="font-weight:700;margin-bottom:6px">🔄 Nạp lại chỉ tiêu mặc định T5</div>
+          <div style="font-size:12px;color:var(--text3);margin-bottom:10px">Ghi đè tất cả KPI Targets tháng 5 về giá trị mặc định ban đầu.</div>
+          <button class="btn btn-g sm" onclick="if(confirm('Nạp lại KPI mặc định T5?')){DB.kpiTargets=[...TARGETS_DEF];saveDB();toast('Đã nạp mặc định','ok')}">Nạp KPI mặc định T5</button>
+        </div>
+      </div>
+    </div>`;
+  }
+}
+function addStore(){const id=g('cs-id').trim(),name=g('cs-name').trim(),code=g('cs-code').trim(),area=g('cs-area').trim(),idx=parseInt(g('cs-idx'))||0;if(!id||!name){toast('Nhập Mã và Tên!','err');return;}if(DB.stores.find(s=>s.id===id)){toast('Mã đã tồn tại!','err');return;}DB.stores.push({id,name,code,area,idx});saveDB();renderConfig();toast(`Đã thêm: ${name}`,'ok');}
+function delStore(id){if(!confirm(`Xoá cửa hàng ${sname(id)}?`))return;DB.stores=DB.stores.filter(s=>s.id!==id);saveDB();renderConfig();toast('Đã xoá','inf');}
+function addCat(){const id=g('cc-id').trim(),name=g('cc-name').trim(),unit=g('cc-unit').trim(),scope=g('cc-scope').trim();if(!id||!name){toast('Nhập Mã và Tên!','err');return;}DB.categories.push({id,name,code:id,unit,scope});saveDB();renderConfig();toast(`Đã thêm: ${name}`,'ok');}
+function delCat(id){if(!confirm(`Xoá hạng mục ${cname(id)}?`))return;DB.categories=DB.categories.filter(c=>c.id!==id);saveDB();renderConfig();toast('Đã xoá','inf');}
+
+// ═══════════════════════════════════════════════
+// EXPORT (Admin only)
+// ═══════════════════════════════════════════════
+function renderExport(){
+  if(!isAdmin()){return;}
+  const m=curMonth,y=curYear;
+  document.getElementById('p-export').innerHTML=`
+  <div class="cards-row c3">
+    <div class="card" style="--card-clr:var(--green)">
+      <div style="font-size:28px;margin-bottom:10px">📊</div>
+      <div class="card-lbl">Báo cáo Dashboard</div>
+      <div style="font-size:13px;color:var(--text2);margin:8px 0">Tổng hợp tiến độ tất cả cửa hàng T${m}/${y}</div>
+      <button class="btn btn-s" onclick="exportDash()">📥 Tải xuống</button>
+    </div>
+    <div class="card" style="--card-clr:var(--blue)">
+      <div style="font-size:28px;margin-bottom:10px">📋</div>
+      <div class="card-lbl">Daily Log chi tiết</div>
+      <div style="font-size:13px;color:var(--text2);margin:8px 0">Toàn bộ bản ghi nhập liệu T${m}/${y}</div>
+      <button class="btn btn-p" onclick="exportLog()">📥 Tải xuống</button>
+    </div>
+    <div class="card" style="--card-clr:var(--amber)">
+      <div style="font-size:28px;margin-bottom:10px">🎯</div>
+      <div class="card-lbl">Bảng KPI Targets</div>
+      <div style="font-size:13px;color:var(--text2);margin:8px 0">Chỉ tiêu đã giao T${m}/${y}</div>
+      <button class="btn btn-g" onclick="exportKPI()">📥 Tải xuống</button>
+    </div>
+  </div>`;
+}
+function exportDash(){
+  const m=curMonth,y=curYear;
+  const rows=[
+    [`BÁO CÁO MARKETING TỔNG HỢP – THÁNG ${m}/${y} – HƯNG THỊNH XE MÁY`],
+    [`Xuất: ${new Date().toLocaleString('vi-VN')} | Kỳ vọng: ${exPct()}%`],[],
+    ['STT','CH','Khu vực','FB LK','FB CT','FB%','TT LK','TT CT','TT%','Live LK','Live CT','Live%','KHTN LK','KHTN CT','KHTN%','Ads','Trạng thái']
+  ];
+  DB.stores.forEach((s,i)=>{
+    const fb=sumL(s.id,'CV02','soBai',m,y),tFb=getT(s.id,'CV02',m,y);
+    const tt=sumL(s.id,'CV03','soBai',m,y),tTt=getT(s.id,'CV03',m,y);
+    const lv=sumL(s.id,'CV01','soBai',m,y),tLv=getT(s.id,'CV01',m,y);
+    const kh=sumF(s.id,'leadsNhanTin',m,y),tKh=getT(s.id,'CV10',m,y);
+    const ads=sumF(s.id,'chiPhiAds',m,y);
+    const avgs=[tFb?pct(fb,tFb):null,tTt?pct(tt,tTt):null,tLv?pct(lv,tLv):null,tKh?pct(kh,tKh):null].filter(v=>v!==null);
+    const avg=avgs.length?Math.round(avgs.reduce((a,b)=>a+b,0)/avgs.length):0;
+    rows.push([s.idx||i+1,s.name,s.area||'',fb,tFb||0,tFb?pct(fb,tFb)+'%':'N/A',tt,tTt||0,tTt?pct(tt,tTt)+'%':'N/A',lv,tLv||0,tLv?pct(lv,tLv)+'%':'N/A',kh,tKh||0,tKh?pct(kh,tKh)+'%':'N/A',ads,avg>=exPct()?'ĐẠT':'CHẬM']);
+  });
+  const ws=XLSX.utils.aoa_to_sheet(rows);const wb=XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb,ws,`BC_T${m}_${y}`);XLSX.writeFile(wb,`BaoCao_MKT_HungThinh_T${m}_${y}.xlsx`);
+  toast('Đã xuất Dashboard Excel','ok');
+}
+function exportLog(){
+  const m=curMonth,y=curYear;const logs=DB.dailyLogs.filter(l=>l.month===m&&l.year===y);
+  const H=['ID','Timestamp','Ngày','Tháng','Năm','Mã CH','Tên CH','Nhân sự','Chức vụ','Mã CV','Tên CV','Nền tảng','Chi tiết','Link','Số','Lượt xem','CCU','WatchTime','FL mới','CMT','Like','Share','Tổng TT','Leads1','Leads2','Đặt cọc','Mua xe','Doanh số','Ads','Điểm ND','Điểm HA','Điểm QC','Điểm ST','Điểm HQ','Tổng điểm','Xếp loại'];
+  const rows=[H,...logs.map(l=>[l.id,new Date(l.timestamp).toLocaleString('vi-VN'),l.date,l.month,l.year,l.storeId,sname(l.storeId),l.staff,l.role,l.categoryId,cname(l.categoryId),l.platform,l.chiTiet,l.link,l.soBai,l.luotXem,l.ccuMax,l.watchTime,l.flMoi,l.comments,l.likes,l.shares,l.totalTuongTac,l.leadsNhanTin,l.leadsSdt,l.leadsDatCoc,l.leadsMuaXe,l.doanhSo,l.chiPhiAds,l.diemND,l.diemHA,l.diemQC,l.diemST,l.diemHQ,l.diemTong,l.xepLoai])];
+  const ws=XLSX.utils.aoa_to_sheet(rows);const wb=XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb,ws,'Daily_Log');XLSX.writeFile(wb,`DailyLog_T${m}_${y}.xlsx`);
+  toast(`Đã xuất ${logs.length} bản ghi Log`,'ok');
+}
+function exportKPI(){
+  const m=curMonth,y=curYear;const targets=DB.kpiTargets.filter(t=>t.month===m&&t.year===y);
+  const rows=[['ID','Năm','Tháng','Mã CH','Tên CH','Mã CV','Tên CV','Chỉ tiêu','Nhân sự'],
+    ...targets.map(t=>[t.id,t.year,t.month,t.storeId,sname(t.storeId),t.categoryId,cname(t.categoryId),t.target,t.staff||''])];
+  const ws=XLSX.utils.aoa_to_sheet(rows);const wb=XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb,ws,'KPI_Targets');XLSX.writeFile(wb,`KPI_T${m}_${y}.xlsx`);
+  toast('Đã xuất KPI Targets','ok');
+}
+
+// ═══════════════════════════════════════════════
+// INIT
+// ═══════════════════════════════════════════════
+loadDB();
+</script>
+</body>
+</html>
