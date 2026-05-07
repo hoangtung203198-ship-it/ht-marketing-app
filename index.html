@@ -694,6 +694,26 @@ td.c{text-align:center}
 .log-metric-item .lm-label{font-size:10px;font-weight:700;color:var(--text3);text-transform:uppercase;letter-spacing:.4px}
 .log-metric-item .lm-val{font-size:17px;font-weight:800;font-family:var(--mono);color:var(--text);line-height:1.2}
 .log-metric-item .lm-unit{font-size:10px;color:var(--text3);font-weight:400}
+/* ── REVIEW DETAIL in modal ── */
+.rev-detail-box{margin-top:14px;border-radius:var(--r);overflow:hidden;border:1px solid}
+.rev-detail-box.good{border-color:rgba(63,185,80,.3);background:rgba(63,185,80,.05)}
+.rev-detail-box.warn{border-color:rgba(210,153,34,.3);background:rgba(210,153,34,.05)}
+.rev-detail-box.bad {border-color:rgba(248,81,73,.25);background:rgba(248,81,73,.05)}
+.rev-detail-box.pass{border-color:rgba(63,185,80,.3);background:rgba(63,185,80,.05)}
+.rev-detail-box.fail{border-color:rgba(248,81,73,.25);background:rgba(248,81,73,.05)}
+.rev-detail-head{padding:12px 14px;display:flex;align-items:center;gap:10px;border-bottom:1px solid rgba(0,0,0,.06)}
+.rev-detail-score-circle{width:52px;height:52px;border-radius:50%;display:flex;align-items:center;justify-content:center;flex-direction:column;flex-shrink:0;border:2px solid currentColor}
+.rev-detail-score-num{font-size:18px;font-weight:800;line-height:1}
+.rev-detail-score-max{font-size:9px;opacity:.7}
+.rev-detail-meta{flex:1}
+.rev-detail-rank{font-size:14px;font-weight:700}
+.rev-detail-by{font-size:11px;opacity:.75;margin-top:2px}
+.rev-breakdown-grid{display:grid;grid-template-columns:repeat(5,1fr);gap:0;padding:12px 14px;gap:8px}
+.rev-breakdown-item{background:var(--bg3);border:1px solid var(--border);border-radius:6px;padding:8px;text-align:center}
+.rev-breakdown-lbl{font-size:9px;color:var(--text3);text-transform:uppercase;letter-spacing:.3px;font-weight:700;margin-bottom:4px}
+.rev-breakdown-val{font-size:16px;font-weight:800;color:var(--text)}
+.rev-note-box{margin:0 14px 12px;padding:10px 12px;background:var(--bg3);border:1px solid var(--border);border-radius:var(--r);font-size:13px;line-height:1.65;color:var(--text2);white-space:pre-wrap;word-break:break-word}
+.rev-note-box::before{content:'💬 Nhận xét: ';font-size:10px;font-weight:700;color:var(--text3);text-transform:uppercase;letter-spacing:.4px;display:block;margin-bottom:5px}
 @media(max-width:768px){
   .log-info-grid{grid-template-columns:1fr 1fr}
   .log-metrics-grid{grid-template-columns:1fr 1fr}
@@ -1876,15 +1896,72 @@ function showLogDetails(logId){
     ?`<div class="log-metrics-grid">${metricItems.join('')}</div>`
     :`<div style="color:var(--text3);font-size:13px;font-style:italic;padding:6px 0">Không có chỉ số nào được ghi nhận.</div>`;
 
-  /* ── Trạng thái đánh giá hiện tại ── */
-  const existingReviewHtml=l.review?`
-    <div style="margin-top:12px;padding:10px 12px;
-                background:rgba(63,185,80,.07);border:1px solid rgba(63,185,80,.18);
-                border-radius:var(--r);font-size:13px">
-      <span style="font-size:10px;font-weight:700;color:var(--text3);text-transform:uppercase;
-                   letter-spacing:.4px;display:block;margin-bottom:6px">✅ Đánh giá hiện tại</span>
-      ${renderReviewCell(l)}
-    </div>`:'';
+  /* ── Trạng thái đánh giá chi tiết ── */
+  let existingReviewHtml='';
+  if(l.review){
+    const r=l.review;
+    if(r.type==='stnd'){
+      const cls=r.total>=85?'good':r.total>=70?'good':r.total>=55?'warn':'bad';
+      const scoreColor=r.total>=70?'var(--green)':r.total>=55?'var(--amber)':'var(--red)';
+      const byDate=r.reviewedAt?` · ${fmtDtFull(r.reviewedAt)}`:'';
+      // Breakdown items
+      const breakdown=[
+        ['ĐN','Diễn Nói',r.dn],['HA','Hình Ảnh',r.ha],
+        ['QC','Quay Chỉnh',r.qc],['ST','Sản Phẩm',r.st],['HQ','Hiệu Quả',r.hq]
+      ].filter(([,,v])=>v!=null);
+      const breakdownHtml=breakdown.length?`
+        <div class="rev-breakdown-grid">
+          ${breakdown.map(([code,name,val])=>`
+            <div class="rev-breakdown-item">
+              <div class="rev-breakdown-lbl">${code}<span style="display:block;font-size:8px;font-weight:400;color:var(--text3);text-transform:none">${name}</span></div>
+              <div class="rev-breakdown-val" style="color:${val>=17?'var(--green)':val>=13?'var(--amber)':'var(--red)'}">${val}<span style="font-size:10px;color:var(--text3)">/20</span></div>
+            </div>`).join('')}
+        </div>`:''  ;
+      const noteHtml=r.note?`<div class="rev-note-box">${r.note}</div>`:'';
+      existingReviewHtml=`
+        <div class="rev-detail-box ${cls}">
+          <div class="rev-detail-head" style="color:${scoreColor}">
+            <div class="rev-detail-score-circle" style="color:${scoreColor}">
+              <span class="rev-detail-score-num">${r.total}</span>
+              <span class="rev-detail-score-max">/100</span>
+            </div>
+            <div class="rev-detail-meta">
+              <div class="rev-detail-rank">⭐ ${r.xl||'Đã đánh giá'}</div>
+              <div class="rev-detail-by">bởi ${r.reviewedBy||'Quản lý MKT'}${byDate}</div>
+            </div>
+            ${isAdmin()?`<button class="btn btn-b sm" onclick="document.getElementById('log-detail-ov').remove();openReviewModal('${logId}')">✏️ Sửa</button>`:''}
+          </div>
+          ${breakdownHtml}
+          ${noteHtml}
+        </div>`;
+    } else if(r.type==='passfail'){
+      const cls=r.pass?'pass':'fail';
+      const icon=r.pass?'✅':'❌';
+      const label=r.pass?'Đạt':'Không đạt';
+      const color=r.pass?'var(--green)':'var(--red)';
+      const byDate=r.reviewedAt?` · ${fmtDtFull(r.reviewedAt)}`:'';
+      const noteHtml=r.note?`<div class="rev-note-box">${r.note}</div>`:'';
+      existingReviewHtml=`
+        <div class="rev-detail-box ${cls}">
+          <div class="rev-detail-head" style="color:${color}">
+            <div style="font-size:28px;flex-shrink:0">${icon}</div>
+            <div class="rev-detail-meta">
+              <div class="rev-detail-rank" style="font-size:16px">${label}</div>
+              <div class="rev-detail-by">bởi ${r.reviewedBy||'Quản lý MKT'}${byDate}</div>
+            </div>
+            ${isAdmin()?`<button class="btn btn-b sm" onclick="document.getElementById('log-detail-ov').remove();openReviewModal('${logId}')">✏️ Sửa</button>`:''}
+          </div>
+          ${noteHtml}
+        </div>`;
+    }
+  } else {
+    existingReviewHtml=`
+      <div style="margin-top:12px;padding:12px 14px;background:var(--bg3);border:1px dashed var(--border2);
+                  border-radius:var(--r);color:var(--text3);font-size:13px;text-align:center">
+        ⏳ Báo cáo này chưa được đánh giá
+        ${isAdmin()?`<br><button class="btn btn-p sm" style="margin-top:8px" onclick="document.getElementById('log-detail-ov').remove();openReviewModal('${logId}')">⭐ Đánh giá ngay</button>`:''}
+      </div>`;
+  }
 
   /* ── Render modal ── */
   const ov=document.createElement('div');
@@ -1902,12 +1979,15 @@ function showLogDetails(logId){
     <div class="log-detail-section">
       <div class="log-detail-section-title">📊 Chỉ số thực hiện</div>
       ${metricsHtml}
+    </div>
+
+    <div class="log-detail-section" style="margin-bottom:4px">
+      <div class="log-detail-section-title">${l.review?'✅ Đánh giá từ Quản lý MKT':'⏳ Trạng thái đánh giá'}</div>
       ${existingReviewHtml}
     </div>
 
     <div class="modal-foot">
       <button class="btn btn-g" onclick="document.getElementById('log-detail-ov').remove()">✕ Đóng</button>
-      ${isAdmin()?`<button class="btn btn-p" onclick="document.getElementById('log-detail-ov').remove();openReviewModal('${logId}')">⭐ Đánh giá ngay</button>`:''}
     </div>
   </div>`;
   document.body.appendChild(ov);
