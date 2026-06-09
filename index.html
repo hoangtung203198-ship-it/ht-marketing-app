@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Hưng Thịnh MKT v11 – Marketing Management</title>
+<title>Hung Thinh MKT v12.2 - Production Safe</title>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
 <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-app.js"></script>
@@ -2197,6 +2197,16 @@ let _firstLoad = true;
 let _staticUnsubs = [];
 let _monthUnsubs = {};
 
+// ── AUTO LOGOUT KHI KHÔNG THAO TÁC: chỉ signOut, không xoá dữ liệu/user ──
+const IDLE_LOGOUT_MS = 2 * 60 * 1000;
+const IDLE_ACTIVITY_EVENTS = ['pointerdown','mousemove','keydown','scroll','touchstart','click','input','change'];
+const IDLE_EVENT_OPTIONS = { passive: true, capture: true };
+let _idleTimer = null;
+let _idleStarted = false;
+let _isAutoLoggingOut = false;
+let _urgentWarningListenerActive = false;
+let _urgentWarningUnsub = null;
+
 function showLoading(msg) {
   _loadingCount++;
   const el = document.getElementById('loading-overlay');
@@ -2209,6 +2219,65 @@ function hideLoading() {
   if(_loadingCount === 0) {
     const el = document.getElementById('loading-overlay');
     if(el) el.classList.remove('show');
+  }
+}
+function cleanupFirebaseListenersSafe(){
+  // Chỉ ngắt realtime listeners để tiết kiệm dữ liệu Firebase.
+  // Tuyệt đối không remove/set null/xoá database/xoá tài khoản user ở đây.
+  if(Array.isArray(_staticUnsubs)){
+    _staticUnsubs.forEach(fn=>{ if(typeof fn==='function'){ try{ fn(); }catch(e){ console.warn('Static listener cleanup skipped:', e); } } });
+  }
+  _staticUnsubs = [];
+
+  if(_monthUnsubs && typeof _monthUnsubs === 'object'){
+    Object.values(_monthUnsubs).forEach(entry=>{
+      const fns = Array.isArray(entry) ? entry : [entry];
+      fns.forEach(fn=>{ if(typeof fn==='function'){ try{ fn(); }catch(e){ console.warn('Month listener cleanup skipped:', e); } } });
+    });
+  }
+  _monthUnsubs = {};
+
+  if(typeof _urgentWarningUnsub === 'function'){
+    try{ _urgentWarningUnsub(); }catch(e){ console.warn('Urgent warning listener cleanup skipped:', e); }
+  }
+  _urgentWarningUnsub = null;
+  _urgentWarningListenerActive = false;
+}
+function resetIdleTimer(){
+  if(!curUser || !auth.currentUser) return;
+  if(_idleTimer) clearTimeout(_idleTimer);
+  _idleTimer = setTimeout(autoLogoutForIdle, IDLE_LOGOUT_MS);
+}
+function startIdleLogoutWatcher(){
+  if(_idleStarted) { resetIdleTimer(); return; }
+  if(!curUser || !auth.currentUser) return;
+  _idleStarted = true;
+  IDLE_ACTIVITY_EVENTS.forEach(evt=>document.addEventListener(evt, resetIdleTimer, IDLE_EVENT_OPTIONS));
+  window.addEventListener('scroll', resetIdleTimer, IDLE_EVENT_OPTIONS);
+  resetIdleTimer();
+}
+function stopIdleLogoutWatcher(){
+  if(_idleTimer){ clearTimeout(_idleTimer); _idleTimer = null; }
+  if(_idleStarted){
+    IDLE_ACTIVITY_EVENTS.forEach(evt=>document.removeEventListener(evt, resetIdleTimer, IDLE_EVENT_OPTIONS));
+    window.removeEventListener('scroll', resetIdleTimer, IDLE_EVENT_OPTIONS);
+  }
+  _idleStarted = false;
+}
+async function autoLogoutForIdle(){
+  if(_isAutoLoggingOut) return;
+  if(!curUser || !auth.currentUser) return;
+  _isAutoLoggingOut = true;
+  try{
+    stopIdleLogoutWatcher();
+    cleanupFirebaseListenersSafe();
+    await auth.signOut();
+    toast('Bạn đã được đăng xuất tự động sau 2 phút không thao tác để tiết kiệm dữ liệu.','inf');
+  }catch(e){
+    console.error('Auto logout error:', e);
+    toast('Không thể tự động đăng xuất. Vui lòng đăng xuất thủ công để tiết kiệm dữ liệu.','warn');
+  }finally{
+    _isAutoLoggingOut = false;
   }
 }
 function _arr(v){
@@ -2414,6 +2483,7 @@ async function loadMonthData(m=curMonth,y=curYear,force=false){
   const key=_mkey(m,y);
   if(_loadedMonthKeys[key] && !force){
     _mergeMonthPayload(_loadedMonthKeys[key],m,y);
+    if(curUser && !_monthUnsubs[key]) _listenMonth(key,m,y);
     return;
   }
   showLoading(`Đang tải dữ liệu tháng ${m}/${y}...`);
@@ -2509,9 +2579,18 @@ function loadDB() {
     hideLoading();
     auth.onAuthStateChanged(async user => {
       if(!user){
+        stopIdleLogoutWatcher();
+        cleanupFirebaseListenersSafe();
         curUser = null;
         showAuth();
         return;
+      }
+      curUser = _makeCurrentUser(user);
+      _isAutoLoggingOut = false;
+      if(!_staticLoaded){
+        await loadStaticData();
+      }else if(!_staticUnsubs.length){
+        _bindStaticRealtime();
       }
       curUser = _makeCurrentUser(user);
       await loadMonthData(curMonth,curYear,false);
@@ -2585,6 +2664,8 @@ async function doRegister(){
   }finally{ hideLoading(); }
 }
 async function doLogout(){
+  stopIdleLogoutWatcher();
+  cleanupFirebaseListenersSafe();
   try{ await auth.signOut(); }catch(e){ console.error('Logout error:', e); }
   curUser=null;
   document.getElementById('app').classList.remove('show');
@@ -2610,6 +2691,7 @@ function showApp(){
     setTimeout(()=>setupUrgentWarningListener(), 1000);
   }
   updateNotifBadge();
+  startIdleLogoutWatcher();
 }
 function updateBellBadge(){
   const existing=document.getElementById('topbar-bell');
@@ -3448,25 +3530,20 @@ function submitEntry(){
   // ── KẾ HOẠCH → BÁO CÁO: Xử lý liên kết kế hoạch ──
   if(_pendingPlanLink){
     const {sid:pSid, day:pDay, ch:pCh, month:pMonth, year:pYear} = _pendingPlanLink;
-    // Đánh dấu hoàn thành mục kế hoạch
-    // FIX LIVESTREAM SYNC:
-    // - Với kế hoạch dạng mảng, ch có thể là live_1/live_2 để phân biệt task.
-    // - Dashboard đếm theo key chuẩn live, nên cần ghi cả key gốc và key chuẩn theo kênh.
-    // - CV01/CV11 luôn được quy về kênh live để biến C của cột Livestream không bị 0.
+    // Đánh dấu hoàn thành đúng 1 nhiệm vụ kế hoạch đang báo cáo.
+    // Không ghi thêm key baseCh như fp/live khi pCh là fp_1/live_1 để tránh nhảy hoàn thành nhầm task.
     if(!DB.planCompletion) DB.planCompletion={};
     const _doneAt=Date.now();
-    const _baseCh=String(pCh||'').replace(/_\d+$/,'');
     const _markPlanDone=(sid,day,ch,month,year)=>{
       if(!sid||!day||!ch||!month||!year)return;
-      const k=`${sid}_${parseInt(day)}_${ch}_${parseInt(month)}_${parseInt(year)}`;
+      const k=getPlanReviewKey(sid,day,ch,month,year);
       DB.planCompletion[k]=_doneAt;
       DB.planCompletion[k+'_logId']=rec.id;
     };
     _markPlanDone(pSid,pDay,pCh,pMonth,pYear);
-    if(_baseCh&&_baseCh!==pCh)_markPlanDone(pSid,pDay,_baseCh,pMonth,pYear);
-    if(cat==='CV01'||cat==='CV11')_markPlanDone(pSid,pDay,'live',pMonth,pYear);
-    // Lưu cờ cho rec
-    rec.planLink = {sid:pSid, day:pDay, ch:pCh, month:pMonth, year:pYear};
+    // Lưu cờ cho rec với ch đầy đủ và thông tin task để các hàm review/lookup match chính xác.
+    rec.planLink = {..._pendingPlanLink, sid:pSid, storeId:pSid, day:pDay, ch:pCh, month:pMonth, year:pYear};
+    rec.planKey = getPlanReviewKey(pSid,pDay,pCh,pMonth,pYear);
     // Xoá banner liên kết
     document.getElementById('plan-link-banner')?.remove();
     _pendingPlanLink = null;
@@ -6815,10 +6892,10 @@ function planDayTasks(sid,day){
     // idx>0 → thêm hậu tố '_1','_2'... để phân biệt
     const sfx=idx===0?'':'_'+idx;
     const taskType=d.type||'';
-    if(d.fp)  tasks.push({ch:'fp'+sfx,   label:'📘 Fanpage',    desc:d.fp,   type:taskType, taskIdx:idx});
-    if(d.tt)  tasks.push({ch:'tt'+sfx,   label:'🎵 TikTok',     desc:d.tt,   type:taskType, taskIdx:idx});
-    if(d.live)tasks.push({ch:'live'+sfx, label:'📺 Livestream', desc:d.live, type:taskType, taskIdx:idx});
-    if(d.zalo)tasks.push({ch:'zalo'+sfx, label:'💬 Zalo OA',    desc:d.zalo, type:taskType, taskIdx:idx});
+    if(d.fp)  tasks.push({ch:'fp'+sfx,   label:'📘 Fanpage',    desc:d.fp,   type:taskType, taskIdx:idx, taskId:d._taskId||''});
+    if(d.tt)  tasks.push({ch:'tt'+sfx,   label:'🎵 TikTok',     desc:d.tt,   type:taskType, taskIdx:idx, taskId:d._taskId||''});
+    if(d.live)tasks.push({ch:'live'+sfx, label:'📺 Livestream', desc:d.live, type:taskType, taskIdx:idx, taskId:d._taskId||''});
+    if(d.zalo)tasks.push({ch:'zalo'+sfx, label:'💬 Zalo OA',    desc:d.zalo, type:taskType, taskIdx:idx, taskId:d._taskId||''});
   });
 
   return tasks;
@@ -7077,7 +7154,7 @@ function _getPlanTaskInfo(sid,day,ch){
     else if(mpRaw){const o=Object.assign({},pd||{},mpRaw);content=o[baseCh]||'';planType=o.type||'';}
     else if(pd){content=pd[baseCh]||'';planType=pd.type||'';}
   }
-  return{baseCh,ch,content,planType,catId:planChannelToCat(baseCh,(planType||'')+' '+(content||''))};
+  return{baseCh,ch,content,planType,taskIdx:task.taskIdx,taskId:task.taskId||'',catId:planChannelToCat(baseCh,(planType||'')+' '+(content||''))};
 }
 function _isLogEvaluated(l){
   if(!l)return false;
@@ -7088,18 +7165,34 @@ function _isLogEvaluated(l){
   if(l.adminNote||l.adminComment||l.adminReview)return true;
   return false;
 }
+function _planHasTaskSuffix(ch){return /_\d+$/.test(String(ch||''));}
 function _samePlanLink(pl,sid,day,ch,month,year){
   if(!pl)return false;
-  const base=_planBaseCh(ch),plBase=_planBaseCh(pl.ch||'');
-  return String(pl.sid||pl.storeId||'')===String(sid)
+  const sameScope=String(pl.sid||pl.storeId||'')===String(sid)
     && parseInt(pl.day)===parseInt(day)
     && parseInt(pl.month)===parseInt(month)
-    && parseInt(pl.year)===parseInt(year)
-    && (!pl.ch||String(pl.ch)===String(ch)||plBase===base);
+    && parseInt(pl.year)===parseInt(year);
+  if(!sameScope)return false;
+  const reqCh=String(ch||''),plCh=String(pl.ch||'');
+  const reqHasSuffix=_planHasTaskSuffix(reqCh),plHasSuffix=_planHasTaskSuffix(plCh);
+
+  // Dữ liệu mới: nếu 2 bên đều có ch thì phải khớp tuyệt đối, không so theo baseCh.
+  if(reqCh&&plCh)return plCh===reqCh;
+
+  // Tương thích dữ liệu cũ: chỉ fallback baseCh khi task hiện tại không có hậu tố.
+  if(reqHasSuffix)return false;
+  if(!plCh)return true;
+  if(plHasSuffix)return false;
+  return _planBaseCh(plCh)===_planBaseCh(reqCh);
 }
 function getPlanReviewKey(sid,day,ch,month=planMonth,year=planYear){return `${sid}_${parseInt(day)}_${String(ch||'')}_${parseInt(month)}_${parseInt(year)}`;}
 function _planLogIdFromCompletion(sid,day,ch,month=planMonth,year=planYear){
-  const keys=[getPlanReviewKey(sid,day,ch,month,year),getPlanReviewKey(sid,day,_planBaseCh(ch),month,year)];
+  const keys=[getPlanReviewKey(sid,day,ch,month,year)];
+  // Chỉ fallback về baseCh cho dữ liệu cũ không có hậu tố. fp_1/fp_2 không được đọc nhầm key fp.
+  if(!_planHasTaskSuffix(ch)){
+    const baseKey=getPlanReviewKey(sid,day,_planBaseCh(ch),month,year);
+    if(!keys.includes(baseKey))keys.push(baseKey);
+  }
   for(const k of keys){
     const id=(DB.planCompletion||{})[k+'_logId'];
     if(id){
@@ -7113,6 +7206,7 @@ function findPlanRelatedLog(sid,day,ch,month=planMonth,year=planYear){
   const direct=_planLogIdFromCompletion(sid,day,ch,month,year);
   if(direct)return direct;
   const info=_getPlanTaskInfo(sid,day,ch);
+  const hasSuffix=_planHasTaskSuffix(ch);
   const logs=(DB.dailyLogs||[]).filter(l=>{
     if(String(l.storeId||'')!==String(sid))return false;
     const dp=_planLogDateParts(l);
@@ -7124,17 +7218,22 @@ function findPlanRelatedLog(sid,day,ch,month=planMonth,year=planYear){
     String(l.planKey||'')===getPlanReviewKey(sid,day,ch,month,year)
   );
   if(linked)return linked;
-  const dayStr=`${parseInt(year)}-${String(parseInt(month)).padStart(2,'0')}-${String(parseInt(day)).padStart(2,'0')}`;
-  const sch=(DB.schedules||[]).find(s=>String(s.storeId||'')===String(sid)&&String(s.ngayDuKien||'')===dayStr&&s.reportLogId);
-  if(sch){
-    const bySch=(DB.dailyLogs||[]).find(l=>String(l.id)===String(sch.reportLogId));
-    if(bySch)return bySch;
-  }
+
+  // Tương thích dữ liệu cũ: chỉ dùng suy đoán khi task hiện tại không có hậu tố.
+  // Với fp_1/fp_2/live_1..., không chắc chắn thì trả null để tránh hoàn thành nhầm.
+  if(hasSuffix)return null;
+
+  const dayTasks=planDayTasks(sid,day)||[];
+  const sameBaseTasks=dayTasks.filter(t=>_planBaseCh(t.ch)===_planBaseCh(ch));
+  const sameCatTasks=dayTasks.filter(t=>String(planChannelToCat(_planBaseCh(t.ch),(t.type||'')+' '+(t.desc||'')))===String(info.catId));
+  if(sameBaseTasks.length>1||sameCatTasks.length>1)return null;
+
   const catLogs=logs.filter(l=>String(l.categoryId||'')===String(info.catId));
   if(catLogs.length===1)return catLogs[0];
   if(catLogs.length>1){
     const scored=catLogs.map(l=>({l,score:_planTextScore(info.content,_planLogContent(l))})).sort((a,b)=>b.score-a.score);
-    if(scored[0]&&scored[0].score>=35)return scored[0].l;
+    const top=scored[0],second=scored[1];
+    if(top&&top.score>=80&&(!second||top.score-second.score>=20))return top.l;
   }
   return null;
 }
@@ -7575,10 +7674,14 @@ function reportFromPlan(sid, day, ch){
     planType=pd.type||'';
   }
   const catId=planChannelToCat(baseCh, planType+' '+content);
+  const planTask=(planDayTasks(sid,day)||[]).find(t=>t.ch===ch)||{};
 
-  // Lưu cờ để submitEntry biết
+  // Lưu cờ để submitEntry biết – giữ ch đầy đủ, không rút gọn về baseCh
   _pendingPlanLink = {
-    sid, day, ch,
+    sid, storeId:sid, day, ch,
+    baseCh,
+    taskIdx,
+    taskId:planTask.taskId||'',
     catId,
     month: planMonth,
     year: planYear,
@@ -8324,8 +8427,8 @@ function savePlanTask(){
   }
 
   // ── LOCK: Chặn User thường thêm công việc vào ngày quá hạn ≥ 2 ngày ──
-  if (isDateLocked(entryYear, entryMonth, entryDay)) {
-    toast('Đã quá thời hạn 2 ngày. Bạn không thể thêm công việc vào ngày này!', 'err');
+  if (!isAdmin() && isDateLocked(entryYear, entryMonth, entryDay)) {
+    toast('Da qua thoi han 2 ngay. Ban khong the them cong viec vao ngay nay!', 'err');
     return;
   }
 
@@ -10623,6 +10726,783 @@ function exportAdsExcel() {
 // ═══════════════════════════════════════════════
 // INIT
 // ═══════════════════════════════════════════════
+
+
+/* ═══════════════════════════════════════════════════════════════
+   HARDENED STABILITY PATCH v12.1
+   Mục tiêu: không mất dữ liệu/user, giảm tải dữ liệu, chặn user sai quyền,
+   bảo vệ đồng bộ kế hoạch ↔ nhập liệu ↔ dashboard, và hạn chế ghi đè.
+   Patch này chỉ override hàm rủi ro, không phá cấu trúc dữ liệu cũ.
+   ═══════════════════════════════════════════════════════════════ */
+(function(){
+  if(window.__HT_HARDENED_STABILITY_PATCH__) return;
+  window.__HT_HARDENED_STABILITY_PATCH__ = 'v12.1';
+
+  const __orig = {
+    saveDB: typeof saveDB === 'function' ? saveDB : null,
+    saveDB_promise: typeof saveDB_promise === 'function' ? saveDB_promise : null,
+    loadMonthData: typeof loadMonthData === 'function' ? loadMonthData : null,
+    _listenMonth: typeof _listenMonth === 'function' ? _listenMonth : null,
+    _mergeMonthPayload: typeof _mergeMonthPayload === 'function' ? _mergeMonthPayload : null,
+    _makeCurrentUser: typeof _makeCurrentUser === 'function' ? _makeCurrentUser : null,
+    showApp: typeof showApp === 'function' ? showApp : null,
+    doRegister: typeof doRegister === 'function' ? doRegister : null,
+    submitEntry: typeof submitEntry === 'function' ? submitEntry : null,
+    setPlanDone: typeof setPlanDone === 'function' ? setPlanDone : null,
+    tasks_markAllModal: typeof tasks_markAllModal === 'function' ? tasks_markAllModal : null,
+    deleteUser: typeof deleteUser === 'function' ? deleteUser : null,
+    deactivateUser: typeof deactivateUser === 'function' ? deactivateUser : null,
+    rejectUser: typeof rejectUser === 'function' ? rejectUser : null,
+    toast: typeof toast === 'function' ? toast : null
+  };
+  window.__HT_ORIG_PATCHED__ = __orig;
+
+  function htNow(){ return Date.now(); }
+  function htIsAdmin(){ return !!(curUser && (curUser.isAdmin || curUser.role === 'admin')); }
+  function htStoreId(){ return curUser && curUser.storeId ? String(curUser.storeId) : ''; }
+  function htArr(v){ try { return _arr(v); } catch(e){ return Array.isArray(v) ? v.filter(Boolean) : (v && typeof v === 'object' ? Object.values(v).filter(Boolean) : []); } }
+  function htObj(v){ try { return _obj(v); } catch(e){ return (v && typeof v === 'object' && !Array.isArray(v)) ? v : {}; } }
+  function htMonthKey(m,y){ try { return _mkey(m,y); } catch(e){ return `${parseInt(y)||curYear}_${String(parseInt(m)||curMonth).padStart(2,'0')}`; } }
+  function htLegacyKey(m,y){ try { return _legacyPlanKey(m,y); } catch(e){ return `${parseInt(m)||curMonth}_${parseInt(y)||curYear}`; } }
+  function htSafeText(v){ return String(v == null ? '' : v).replace(/[&<>'"`=\/]/g, s => ({'&':'&amp;','<':'&lt;','>':'&gt;',"'":'&#39;','"':'&quot;','`':'&#96;','=':'&#61;','/':'&#47;'}[s])); }
+  window.htSafeText = htSafeText;
+
+  function htAllowedRecord(rec, sid){
+    if(!sid || !rec || typeof rec !== 'object') return false;
+    const keys = ['storeId','sid','unitId','donVi','store','store_id'];
+    return keys.some(k => String(rec[k] || '') === sid);
+  }
+  function htFilterRows(rows, sid){ return htArr(rows).filter(r => htAllowedRecord(r, sid)); }
+  function htFilterKeyObj(obj, sid){
+    obj = htObj(obj);
+    if(!sid) return {};
+    const out = {};
+    Object.keys(obj).forEach(k => {
+      if(String(k).startsWith(`${sid}_`)) out[k] = obj[k];
+    });
+    return out;
+  }
+  function htFilterPlanTargets(obj, sid, m, y){
+    obj = htObj(obj); if(!sid) return {};
+    const out = {};
+    const lk = htLegacyKey(m,y);
+    Object.keys(obj).forEach(k => {
+      if(String(k).startsWith(`${sid}_`)) out[k] = obj[k];
+      if(k === lk && obj[k] && typeof obj[k] === 'object') out[k] = {[sid]: obj[k][sid] || {}};
+    });
+    return out;
+  }
+  function htFilterMasterPlans(obj, sid, m, y){
+    obj = htObj(obj); if(!sid) return {};
+    const out = {};
+    const lk = htLegacyKey(m,y);
+    if(obj[lk] && typeof obj[lk] === 'object') out[lk] = {[sid]: obj[lk][sid] || {}};
+    return out;
+  }
+  function htFilterPayloadForCurrentUser(payload, m, y){
+    payload = payload || {};
+    if(htIsAdmin()) return payload;
+    const sid = htStoreId();
+    return {
+      dailyLogs: htFilterRows(payload.dailyLogs, sid),
+      schedules: htFilterRows(payload.schedules, sid),
+      kpiTargets: htFilterRows(payload.kpiTargets, sid),
+      adsReports: htFilterRows(payload.adsReports, sid),
+      unitAssessments: htFilterRows(payload.unitAssessments, sid),
+      planCompletion: htFilterKeyObj(payload.planCompletion, sid),
+      planReviews: htFilterKeyObj(payload.planReviews, sid),
+      planTargets: htFilterPlanTargets(payload.planTargets, sid, m, y),
+      masterPlans: htFilterMasterPlans(payload.masterPlans, sid, m, y)
+    };
+  }
+  function htEnsureSession(showMessage){
+    if(!curUser || !auth.currentUser) return false;
+    const admin = htIsAdmin();
+    if(!admin){
+      if(curUser.active === false || curUser.approved === false || curUser.deleted === true){
+        if(showMessage) alert('Tài khoản đang bị khoá/chưa được duyệt. Vui lòng liên hệ Admin.');
+        try { stopIdleLogoutWatcher(); cleanupFirebaseListenersSafe(); auth.signOut(); } catch(e){}
+        return false;
+      }
+      if(!curUser.storeId){
+        if(showMessage) alert('Tài khoản chưa được phân đơn vị nên không thể tải dữ liệu. Vui lòng liên hệ Admin để gán cửa hàng.');
+        try { stopIdleLogoutWatcher(); cleanupFirebaseListenersSafe(); auth.signOut(); } catch(e){}
+        return false;
+      }
+    }
+    return true;
+  }
+
+  function htToast(msg, type){
+    if(__orig.toast) return __orig.toast(String(msg == null ? '' : msg), type || 'inf');
+    console.log(type || 'info', msg);
+  }
+
+  _makeCurrentUser = function(user){
+    if(!user || !user.email) return null;
+    const email = String(user.email || '').trim().toLowerCase();
+    const prefix = email.split('@')[0];
+    const admin = email.startsWith('admin@');
+    const legacy = (DB.users || []).find(u =>
+      String(u.email || '').toLowerCase() === email ||
+      String(u.username || '').toLowerCase() === prefix ||
+      String(u.uid || '') === user.uid ||
+      String(u.id || '') === user.uid
+    );
+    const hasLegacy = !!legacy;
+    return {
+      ...(legacy || {}),
+      id: user.uid,
+      uid: user.uid,
+      email,
+      username: prefix,
+      name: legacy?.name || user.displayName || (admin ? 'Quản lý MKT' : prefix),
+      role: admin ? 'admin' : (legacy?.role || 'user'),
+      isAdmin: admin,
+      storeId: admin ? null : (legacy?.storeId || null),
+      active: admin ? true : (hasLegacy ? legacy.active !== false : false),
+      approved: admin ? true : (hasLegacy ? legacy.approved !== false : false),
+      deleted: !!legacy?.deleted
+    };
+  };
+
+  _mergeMonthPayload = function(payload, m, y){
+    const filtered = htFilterPayloadForCurrentUser(payload || {}, m, y);
+    if(__orig._mergeMonthPayload) return __orig._mergeMonthPayload(filtered, m, y);
+  };
+
+  async function htLoadCollectionQuery(monthRef, child, sid){
+    try{
+      const snap = await monthRef.child(child).orderByChild('storeId').equalTo(sid).once('value');
+      return htArr(snap.val());
+    }catch(e){
+      console.warn('Scoped query fallback:', child, e?.message || e);
+      const snap = await monthRef.child(child).once('value');
+      return htFilterRows(snap.val(), sid);
+    }
+  }
+  async function htLoadKeyPrefix(monthRef, child, sid){
+    try{
+      const snap = await monthRef.child(child).orderByKey().startAt(`${sid}_`).endAt(`${sid}_\uf8ff`).once('value');
+      return htObj(snap.val());
+    }catch(e){
+      console.warn('Scoped key query fallback:', child, e?.message || e);
+      const snap = await monthRef.child(child).once('value');
+      return htFilterKeyObj(snap.val(), sid);
+    }
+  }
+  async function htLoadMonthScoped(m, y, force){
+    m = parseInt(m) || curMonth; y = parseInt(y) || curYear;
+    const key = htMonthKey(m,y), sid = htStoreId(), lk = htLegacyKey(m,y);
+    if(!sid) return {};
+    if(_loadedMonthKeys[key] && !force){
+      _mergeMonthPayload(_loadedMonthKeys[key], m, y);
+      if(!_monthUnsubs[key]) _listenMonth(key, m, y);
+      return _loadedMonthKeys[key];
+    }
+    showLoading(`Đang tải dữ liệu đơn vị tháng ${m}/${y}...`);
+    try{
+      const monthRef = database.ref(`${HT_ROOT}/${MONTH_NODE}/${key}`);
+      const exists = await monthRef.once('value');
+      let payload;
+      if(exists.exists()){
+        const [dailyLogs, schedules, kpiTargets, adsReports, unitAssessments, planCompletion, planReviews, targetStore, masterStore] = await Promise.all([
+          htLoadCollectionQuery(monthRef, 'dailyLogs', sid),
+          htLoadCollectionQuery(monthRef, 'schedules', sid),
+          htLoadCollectionQuery(monthRef, 'kpiTargets', sid),
+          htLoadCollectionQuery(monthRef, 'adsReports', sid),
+          htLoadCollectionQuery(monthRef, 'unitAssessments', sid),
+          htLoadKeyPrefix(monthRef, 'planCompletion', sid),
+          htLoadKeyPrefix(monthRef, 'planReviews', sid),
+          monthRef.child(`planTargets/${lk}/${sid}`).once('value'),
+          monthRef.child(`masterPlans/${lk}/${sid}`).once('value')
+        ]);
+        payload = {dailyLogs, schedules, kpiTargets, adsReports, unitAssessments, planCompletion, planReviews, planTargets:{[lk]:{[sid]:targetStore.val() || {}}}, masterPlans:{[lk]:{[sid]:masterStore.val() || {}}}};
+      }else{
+        // Dữ liệu cũ chưa migrate: tải legacy rồi lọc theo đơn vị, tuyệt đối không ghi đè node tháng.
+        const legacy = await _loadLegacyMonth(m,y);
+        payload = htFilterPayloadForCurrentUser(legacy || {}, m, y);
+      }
+      _loadedMonthKeys[key] = payload || {};
+      _mergeMonthPayload(_loadedMonthKeys[key], m, y);
+      _listenMonth(key, m, y);
+      return payload;
+    }catch(e){
+      console.error('Lỗi tải dữ liệu đơn vị:', e);
+      htToast(`Không tải được dữ liệu tháng ${m}/${y}. Vui lòng kiểm tra quyền truy cập.`, 'err');
+    }finally{ hideLoading(); }
+  }
+
+  loadMonthData = async function(m = curMonth, y = curYear, force = false){
+    if(!htEnsureSession(true)) return;
+    if(htIsAdmin()) return __orig.loadMonthData ? __orig.loadMonthData(m,y,force) : null;
+    return htLoadMonthScoped(m,y,force);
+  };
+
+  _listenMonth = function(key, m, y){
+    if(htIsAdmin()) return __orig._listenMonth ? __orig._listenMonth(key,m,y) : null;
+    if(_monthUnsubs[key]) return;
+    const sid = htStoreId(); if(!sid) return;
+    const lk = htLegacyKey(m,y);
+    const monthRef = database.ref(`${HT_ROOT}/${MONTH_NODE}/${key}`);
+    const unsubs = [];
+    const payload = _loadedMonthKeys[key] || {};
+    function mergeAndRefresh(){
+      _loadedMonthKeys[key] = payload;
+      if(parseInt(m) === parseInt(curMonth) && parseInt(y) === parseInt(curYear)){
+        _mergeMonthPayload(payload, m, y);
+        if(document.getElementById('app')?.classList.contains('show')){
+          try { _detectRealTimeNotifications(); } catch(e){}
+          try { syncUI(); } catch(e){ console.warn('syncUI skipped:', e); }
+        }
+      }
+    }
+    ['dailyLogs','schedules','kpiTargets','adsReports','unitAssessments'].forEach(child => {
+      try{
+        const q = monthRef.child(child).orderByChild('storeId').equalTo(sid);
+        const cb = snap => { payload[child] = htArr(snap.val()); mergeAndRefresh(); };
+        q.on('value', cb);
+        unsubs.push(() => q.off('value', cb));
+      }catch(e){ console.warn('Scoped listener skipped:', child, e?.message || e); }
+    });
+    ['planCompletion','planReviews'].forEach(child => {
+      try{
+        const q = monthRef.child(child).orderByKey().startAt(`${sid}_`).endAt(`${sid}_\uf8ff`);
+        const cb = snap => { payload[child] = htObj(snap.val()); mergeAndRefresh(); };
+        q.on('value', cb);
+        unsubs.push(() => q.off('value', cb));
+      }catch(e){ console.warn('Scoped key listener skipped:', child, e?.message || e); }
+    });
+    try{
+      const tRef = monthRef.child(`planTargets/${lk}/${sid}`);
+      const cb = snap => { payload.planTargets = {[lk]:{[sid]:snap.val() || {}}}; mergeAndRefresh(); };
+      tRef.on('value', cb); unsubs.push(() => tRef.off('value', cb));
+    }catch(e){}
+    try{
+      const mpRef = monthRef.child(`masterPlans/${lk}/${sid}`);
+      const cb = snap => { payload.masterPlans = {[lk]:{[sid]:snap.val() || {}}}; mergeAndRefresh(); };
+      mpRef.on('value', cb); unsubs.push(() => mpRef.off('value', cb));
+    }catch(e){}
+    _monthUnsubs[key] = unsubs;
+  };
+
+  function htMergeCollection(current, local, sid){
+    const keep = htArr(current).filter(r => !htAllowedRecord(r, sid));
+    const own = htArr(local).filter(r => htAllowedRecord(r, sid));
+    const map = new Map();
+    keep.concat(own).forEach((r, i) => map.set(String(r.id || `${r.storeId || ''}_${r.date || r.ngayDuKien || ''}_${i}`), r));
+    return Array.from(map.values());
+  }
+  function htMergeKeyObj(current, local, sid){
+    const out = {};
+    current = htObj(current); local = htObj(local);
+    Object.keys(current).forEach(k => { if(!String(k).startsWith(`${sid}_`)) out[k] = current[k]; });
+    Object.keys(local).forEach(k => { if(String(k).startsWith(`${sid}_`)) out[k] = local[k]; });
+    return out;
+  }
+  function htMergePlanTargets(current, local, sid, m, y){
+    const out = htObj(current), lk = htLegacyKey(m,y);
+    Object.keys(local || {}).forEach(k => { if(String(k).startsWith(`${sid}_`)) out[k] = local[k]; });
+    if(local && local[lk]){
+      if(!out[lk] || typeof out[lk] !== 'object') out[lk] = {};
+      out[lk][sid] = (local[lk] && local[lk][sid]) || {};
+    }
+    return out;
+  }
+  function htMergeMasterPlans(current, local, sid, m, y){
+    const out = htObj(current), lk = htLegacyKey(m,y);
+    if(local && local[lk]){
+      if(!out[lk] || typeof out[lk] !== 'object') out[lk] = {};
+      out[lk][sid] = (local[lk] && local[lk][sid]) || {};
+    }
+    return out;
+  }
+  function htMergeNotifications(current, local){
+    const map = new Map();
+    htArr(current).concat(htArr(local)).forEach((n, i) => map.set(String(n.id || n.ts || n.time || `${n.message || ''}_${i}`), n));
+    return Array.from(map.values()).sort((a,b)=>(a.ts||a.time||0)-(b.ts||b.time||0)).slice(-300);
+  }
+  async function htBackupOnce(reason){
+    try{
+      if(!auth.currentUser || !htIsAdmin()) return;
+      if(window.__HT_BACKUP_DONE_THIS_SESSION__) return;
+      window.__HT_BACKUP_DONE_THIS_SESSION__ = true;
+      const key = htMonthKey(curMonth,curYear);
+      const [staticSnap, monthSnap] = await Promise.all([
+        database.ref(`${HT_ROOT}`).once('value'),
+        database.ref(`${HT_ROOT}/${MONTH_NODE}/${key}`).once('value')
+      ]);
+      await database.ref(`${HT_ROOT}/_safetyBackups/${new Date().toISOString().replace(/[.:]/g,'-')}`).set({
+        reason: reason || 'before-save',
+        uid: auth.currentUser.uid,
+        email: auth.currentUser.email || '',
+        monthKey: key,
+        createdAt: htNow(),
+        stores: staticSnap.val()?.stores || null,
+        categories: staticSnap.val()?.categories || null,
+        users: staticSnap.val()?.users || null,
+        settings: staticSnap.val()?.settings || null,
+        monthData: monthSnap.val() || null
+      });
+    }catch(e){ console.warn('Safety backup skipped:', e?.message || e); }
+  }
+
+  async function htSaveUserScoped(){
+    if(!htEnsureSession(true)) return;
+    const sid = htStoreId(), key = htMonthKey(curMonth,curYear);
+    if(!sid) throw new Error('Missing storeId');
+    normalizeDB();
+    const local = htFilterPayloadForCurrentUser(_monthPayload(curMonth,curYear), curMonth, curYear);
+    const monthRef = database.ref(`${HT_ROOT}/${MONTH_NODE}/${key}`);
+    const snap = await monthRef.once('value');
+    const current = snap.val() || {};
+    const merged = {
+      ...(current || {}),
+      dailyLogs: htMergeCollection(current.dailyLogs, local.dailyLogs, sid),
+      schedules: htMergeCollection(current.schedules, local.schedules, sid),
+      kpiTargets: htMergeCollection(current.kpiTargets, local.kpiTargets, sid),
+      adsReports: htMergeCollection(current.adsReports, local.adsReports, sid),
+      unitAssessments: htMergeCollection(current.unitAssessments, local.unitAssessments, sid),
+      planCompletion: htMergeKeyObj(current.planCompletion, local.planCompletion, sid),
+      planReviews: htMergeKeyObj(current.planReviews, local.planReviews, sid),
+      planTargets: htMergePlanTargets(current.planTargets, local.planTargets, sid, curMonth, curYear),
+      masterPlans: htMergeMasterPlans(current.masterPlans, local.masterPlans, sid, curMonth, curYear)
+    };
+    await monthRef.set(merged);
+    _loadedMonthKeys[key] = htFilterPayloadForCurrentUser(merged, curMonth, curYear);
+    // User chỉ được bổ sung notifications, không ghi users/stores/settings.
+    try{
+      const ns = await database.ref(`${HT_ROOT}/notifications`).once('value');
+      await database.ref(`${HT_ROOT}/notifications`).set(htMergeNotifications(ns.val(), DB.notifications));
+    }catch(e){ console.warn('Notification merge skipped:', e?.message || e); }
+  }
+
+  async function htSaveAdminSafe(){
+    normalizeDB();
+    await htBackupOnce('admin-save');
+    const key = htMonthKey(curMonth,curYear);
+    const payload = _monthPayload(curMonth,curYear);
+    _loadedMonthKeys[key] = payload;
+    // Admin vẫn có quyền cấu hình toàn hệ thống, nhưng dùng update tách node để giảm lỗi ghi đè.
+    await database.ref(`${HT_ROOT}`).update({
+      stores: DB.stores,
+      categories: DB.categories,
+      users: DB.users,
+      settings: DB.settings,
+      notifications: (DB.notifications || []).slice(-300),
+      systemWarnings: DB.systemWarnings || {}
+    });
+    await database.ref(`${HT_ROOT}/${MONTH_NODE}/${key}`).set(payload);
+  }
+
+  saveDB = async function(){
+    showLoading('Đang lưu dữ liệu an toàn...');
+    try{
+      if(htIsAdmin()) await htSaveAdminSafe();
+      else await htSaveUserScoped();
+    }catch(e){
+      console.error('Lỗi khi lưu an toàn:', e);
+      htToast('Lưu Firebase thất bại. Dữ liệu trên màn hình chưa bị xoá, vui lòng thử lại hoặc báo Admin.', 'err');
+      throw e;
+    }finally{ hideLoading(); }
+  };
+  saveDB_promise = function(){ return saveDB(); };
+
+  showApp = function(){
+    if(!htEnsureSession(true)) return;
+    return __orig.showApp ? __orig.showApp() : null;
+  };
+
+  doRegister = async function(){
+    const name = document.getElementById('r-name')?.value.trim();
+    const username = document.getElementById('r-user')?.value.trim().toLowerCase();
+    const pass = document.getElementById('r-pass')?.value || '';
+    const storeId = document.getElementById('r-store')?.value || '';
+    const err = document.getElementById('reg-err');
+    if(!name || !username || !pass || !storeId){ if(err){err.style.display='block'; err.textContent='Vui lòng điền đầy đủ thông tin và chọn đơn vị!';} return; }
+    if(pass.length < 6){ if(err){err.style.display='block'; err.textContent='Mật khẩu tối thiểu 6 ký tự!';} return; }
+    const email = _loginEmail(username);
+    showLoading('Đang gửi đăng ký...');
+    try{
+      const cred = await auth.createUserWithEmailAndPassword(email, pass);
+      await cred.user.updateProfile({displayName:name}).catch(()=>{});
+      const newUser = {id:cred.user.uid, uid:cred.user.uid, email, username:email.split('@')[0], name, role:'user', storeId, active:false, approved:false, createdAt:htNow()};
+      const ref = database.ref(`${HT_ROOT}/users`);
+      const snap = await ref.once('value');
+      const users = htArr(snap.val()).filter(u => String(u.email || '').toLowerCase() !== email && String(u.username || '').toLowerCase() !== newUser.username);
+      users.push(newUser);
+      await ref.set(users);
+      await auth.signOut().catch(()=>{});
+      if(err) err.style.display='none';
+      const fb = document.getElementById('register-form');
+      if(fb) fb.innerHTML = `<div class="auth-pending">✅ Đã gửi đăng ký cho <strong>${htSafeText(name)}</strong>.<br>Tài khoản sẽ đăng nhập được sau khi Admin phê duyệt và phân đúng đơn vị.</div><button class="auth-btn" onclick="location.reload()">← Quay lại đăng nhập</button>`;
+    }catch(e){
+      console.error('Register error:', e);
+      if(err){ err.style.display='block'; err.textContent = e?.message || 'Không tạo được tài khoản.'; }
+    }finally{ hideLoading(); }
+  };
+
+  function htValidateEntryBeforeSave(){
+    const store = document.getElementById('e-store')?.value || eSelStore || curUser?.storeId;
+    if(!htIsAdmin() && String(store) !== String(htStoreId())){
+      htToast('Bạn chỉ được nhập/sửa dữ liệu của đơn vị mình.', 'err');
+      return false;
+    }
+    const detail = document.getElementById('e-detail');
+    if(detail) detail.value = String(detail.value || '').trim();
+    return true;
+  }
+  submitEntry = function(){
+    if(!htValidateEntryBeforeSave()) return;
+    return __orig.submitEntry ? __orig.submitEntry() : null;
+  };
+
+  setPlanDone = async function(sid, day, ch, val){
+    if(!htIsAdmin() && String(sid) !== String(htStoreId())){ htToast('Bạn chỉ được cập nhật kế hoạch của đơn vị mình.', 'err'); return; }
+    // Hạn chế tick hoàn thành thủ công: vẫn cho dùng, nhưng lưu dấu manual để dashboard có thể phân biệt với báo cáo thật.
+    if(!DB.planCompletion) DB.planCompletion = {};
+    const k = getPlanKey(sid, day, ch);
+    if(val){ DB.planCompletion[k] = htNow(); DB.planCompletion[k + '_manual'] = true; }
+    else { delete DB.planCompletion[k]; delete DB.planCompletion[k + '_manual']; delete DB.planCompletion[k + '_logId']; }
+    await saveDB();
+    try { renderPlan(); } catch(e){}
+  };
+
+  tasks_markAllModal = async function(sid, day, val){
+    if(!htIsAdmin() && String(sid) !== String(htStoreId())){ htToast('Bạn chỉ được cập nhật kế hoạch của đơn vị mình.', 'err'); return; }
+    if(isDateLocked(planYear, planMonth, day) && val){ htToast('Đã quá thời hạn 2 ngày. Bạn không thể đánh dấu hoàn thành cho ngày này!', 'err'); return; }
+    const tasks = planDayTasks(sid, day);
+    tasks.forEach(t => {
+      if(!DB.planCompletion) DB.planCompletion = {};
+      const k = getPlanKey(sid, day, t.ch);
+      if(val){ DB.planCompletion[k] = htNow(); DB.planCompletion[k + '_manual'] = true; }
+      else { delete DB.planCompletion[k]; delete DB.planCompletion[k + '_manual']; delete DB.planCompletion[k + '_logId']; }
+    });
+    await saveDB();
+    try { openPlanDayModal(sid, day); renderPlan(); } catch(e){}
+    htToast(val ? `✅ Đã đánh dấu thủ công ngày ${day}/${planMonth}` : `↩ Đã huỷ ngày ${day}/${planMonth}`, 'ok');
+  };
+
+  // Quản trị user: không xoá cứng record để tránh mất user/dữ liệu và tránh lệch Firebase Auth.
+  deactivateUser = async function(id){
+    if(!htIsAdmin()){ htToast('Chỉ Admin mới có quyền khoá user.', 'err'); return; }
+    const u = (DB.users || []).find(x => x.id === id || x.uid === id); if(!u) return;
+    if(!confirm(`Khoá tài khoản ${u.name || u.username}?\nTài khoản sẽ không đăng nhập được nhưng dữ liệu và lịch sử vẫn được giữ nguyên.`)) return;
+    u.active = false; u.approved = true; u.lockedAt = htNow(); u.lockedBy = curUser?.email || curUser?.username || 'admin';
+    await saveDB(); renderUsers(); buildSidebar(); updateBellBadge(); htToast(`🚫 Đã khoá: ${u.name || u.username}`, 'warn');
+  };
+  deleteUser = async function(id){
+    if(!htIsAdmin()){ htToast('Chỉ Admin mới có quyền xoá user.', 'err'); return; }
+    const u = (DB.users || []).find(x => x.id === id || x.uid === id); if(!u) return;
+    const ok = prompt(`Để tránh mất dữ liệu, thao tác này sẽ CHỈ ẨN/KHOÁ tài khoản, không xoá lịch sử.\nNhập XOA để xác nhận ẩn user: ${u.name || u.username}`);
+    if(ok !== 'XOA') return;
+    u.active = false; u.approved = true; u.deleted = true; u.deletedAt = htNow(); u.deletedBy = curUser?.email || curUser?.username || 'admin';
+    await saveDB(); renderUsers(); buildSidebar(); updateBellBadge(); htToast(`🗑️ Đã ẩn/khoá user, không xoá dữ liệu: ${u.name || u.username}`, 'inf');
+  };
+  rejectUser = async function(id){
+    if(!htIsAdmin()){ htToast('Chỉ Admin mới có quyền từ chối user.', 'err'); return; }
+    const u = (DB.users || []).find(x => x.id === id || x.uid === id); if(!u) return;
+    if(!confirm(`Từ chối đăng ký của ${u.name || u.username}? Record vẫn được giữ ở trạng thái bị từ chối để tránh lệch Auth.`)) return;
+    u.active = false; u.approved = false; u.rejected = true; u.rejectedAt = htNow(); u.rejectedBy = curUser?.email || curUser?.username || 'admin';
+    await saveDB(); renderUsers(); buildSidebar(); updateBellBadge(); htToast('Đã từ chối yêu cầu đăng ký', 'inf');
+  };
+
+  // Cảnh báo khi hệ thống đang chạy bản đã vá.
+  console.info('Hưng Thịnh MKT hardened patch loaded:', window.__HT_HARDENED_STABILITY_PATCH__);
+})();
+
+
+/* ===============================================================
+   PRODUCTION SAFETY PATCH v12.2
+   Goals: protect users/data, scoped user writes, safer admin saves,
+   reliable content-plan reporting sync, lower accidental data loading,
+   and defensive handling for small runtime errors.
+   This patch is intentionally appended after v12.1 so these overrides
+   are the final active implementations before loadDB() starts.
+   =============================================================== */
+(function(){
+  if(window.__HT_PRODUCTION_SAFETY_PATCH__) return;
+  window.__HT_PRODUCTION_SAFETY_PATCH__ = 'v12.2';
+
+  const ORIG22 = {
+    saveDB: typeof saveDB === 'function' ? saveDB : null,
+    saveDB_promise: typeof saveDB_promise === 'function' ? saveDB_promise : null,
+    setGlobalMonth: typeof setGlobalMonth === 'function' ? setGlobalMonth : null,
+    savePlanTask: typeof savePlanTask === 'function' ? savePlanTask : null,
+    setPlanDone: typeof setPlanDone === 'function' ? setPlanDone : null,
+    tasks_markAll: typeof tasks_markAll === 'function' ? tasks_markAll : null,
+    tasks_markAllModal: typeof tasks_markAllModal === 'function' ? tasks_markAllModal : null,
+    deleteUser: typeof deleteUser === 'function' ? deleteUser : null,
+    rejectUser: typeof rejectUser === 'function' ? rejectUser : null,
+    deactivateUser: typeof deactivateUser === 'function' ? deactivateUser : null,
+    submitEntry: typeof submitEntry === 'function' ? submitEntry : null,
+    showApp: typeof showApp === 'function' ? showApp : null
+  };
+  window.__HT_V12_2_ORIG__ = ORIG22;
+
+  function now(){ return Date.now(); }
+  function admin(){ try{return !!(curUser && (curUser.isAdmin || curUser.role === 'admin'));}catch(e){return false;} }
+  function sid(){ try{return curUser && curUser.storeId ? String(curUser.storeId) : '';}catch(e){return '';} }
+  function mkey(m,y){ try{return _mkey(m,y);}catch(e){return `${parseInt(y)||curYear}_${String(parseInt(m)||curMonth).padStart(2,'0')}`;} }
+  function lkey(m,y){ return `${parseInt(m)||curMonth}_${parseInt(y)||curYear}`; }
+  function arr(v){ try{return _arr(v);}catch(e){return Array.isArray(v)?v.filter(Boolean):(v&&typeof v==='object'?Object.values(v).filter(Boolean):[]);} }
+  function obj(v){ try{return _obj(v);}catch(e){return (v && typeof v==='object' && !Array.isArray(v)) ? v : {}; } }
+  function msg(s,t){ try{toast(s,t||'inf');}catch(e){console.log(t||'info',s);} }
+  function monthRoot(m,y){ return database.ref(`${HT_ROOT}/${MONTH_NODE}/${mkey(m,y)}`); }
+  function recordId(r){ return String((r && (r.id || r._id || r.logId || r.key)) || ''); }
+  function collectionMerge(remote, local){
+    const map = new Map();
+    arr(remote).forEach((r,i)=>map.set(recordId(r)||`remote_${i}`, r));
+    arr(local).forEach((r,i)=>map.set(recordId(r)||`local_${i}`, r));
+    return Array.from(map.values()).filter(Boolean);
+  }
+  function deepMergeKeep(remote, local){
+    if(!remote || typeof remote !== 'object' || Array.isArray(remote)) remote = {};
+    if(!local || typeof local !== 'object' || Array.isArray(local)) local = {};
+    const out = {...remote};
+    Object.keys(local).forEach(k=>{
+      const rv = out[k], lv = local[k];
+      if(lv && typeof lv === 'object' && !Array.isArray(lv) && rv && typeof rv === 'object' && !Array.isArray(rv)) out[k] = deepMergeKeep(rv, lv);
+      else out[k] = lv;
+    });
+    return out;
+  }
+  function safeMonthPayload(){
+    try{ return _monthPayload(curMonth,curYear) || {}; }
+    catch(e){
+      return {
+        dailyLogs: DB.dailyLogs || [], schedules: DB.schedules || [], kpiTargets: DB.kpiTargets || [],
+        adsReports: DB.adsReports || [], unitAssessments: DB.unitAssessments || [],
+        planCompletion: DB.planCompletion || {}, planReviews: DB.planReviews || {},
+        planTargets: DB.planTargets || {}, masterPlans: DB.masterPlans || {}
+      };
+    }
+  }
+  function filterRowsByStore(rows, storeId){ return arr(rows).filter(r=>String(r && r.storeId || '') === String(storeId)); }
+  function filterKeysByStore(o, storeId){ const out={}; Object.keys(obj(o)).forEach(k=>{ if(String(k).startsWith(String(storeId)+'_')) out[k]=o[k]; }); return out; }
+  function enforceUserScope(){
+    if(admin()) return true;
+    const storeId = sid();
+    if(!storeId){ msg('Tai khoan chua duoc gan don vi. Vui long lien he Admin.', 'err'); return false; }
+    DB.dailyLogs = filterRowsByStore(DB.dailyLogs, storeId);
+    DB.schedules = filterRowsByStore(DB.schedules, storeId);
+    DB.kpiTargets = filterRowsByStore(DB.kpiTargets, storeId);
+    DB.adsReports = filterRowsByStore(DB.adsReports, storeId);
+    DB.unitAssessments = filterRowsByStore(DB.unitAssessments, storeId);
+    DB.planCompletion = filterKeysByStore(DB.planCompletion, storeId);
+    DB.planReviews = filterKeysByStore(DB.planReviews, storeId);
+    const lk = lkey(curMonth,curYear);
+    if(DB.masterPlans && DB.masterPlans[lk]) DB.masterPlans = {[lk]: {[storeId]: (DB.masterPlans[lk]||{})[storeId] || {}}};
+    if(DB.planTargets && DB.planTargets[lk]) DB.planTargets = {[lk]: {[storeId]: (DB.planTargets[lk]||{})[storeId] || {}}};
+    return true;
+  }
+  async function backup(reason){
+    try{
+      const key = `${new Date().toISOString().replace(/[.:]/g,'-')}_${String(reason||'save')}`;
+      const snap = await monthRoot(curMonth,curYear).once('value');
+      await database.ref(`${HT_ROOT}/_backups/v12_2/${key}`).set({
+        createdAt: now(), createdBy: curUser?.email || curUser?.username || 'system',
+        reason: String(reason||'save'), month: curMonth, year: curYear,
+        data: snap.val() || {}
+      });
+    }catch(e){ console.warn('v12.2 backup skipped:', e?.message || e); }
+  }
+  async function saveAdminSafe(){
+    normalizeDB();
+    await backup('admin-save');
+    const local = safeMonthPayload();
+    const ref = monthRoot(curMonth,curYear);
+    const snap = await ref.once('value');
+    const remote = obj(snap.val());
+    const merged = {
+      ...remote,
+      dailyLogs: collectionMerge(remote.dailyLogs, local.dailyLogs),
+      schedules: collectionMerge(remote.schedules, local.schedules),
+      kpiTargets: collectionMerge(remote.kpiTargets, local.kpiTargets),
+      adsReports: collectionMerge(remote.adsReports, local.adsReports),
+      unitAssessments: collectionMerge(remote.unitAssessments, local.unitAssessments),
+      planCompletion: deepMergeKeep(remote.planCompletion, local.planCompletion),
+      planReviews: deepMergeKeep(remote.planReviews, local.planReviews),
+      planTargets: deepMergeKeep(remote.planTargets, local.planTargets),
+      masterPlans: deepMergeKeep(remote.masterPlans, local.masterPlans)
+    };
+    if(typeof _loadedMonthKeys === 'object') _loadedMonthKeys[mkey(curMonth,curYear)] = merged;
+    await database.ref(`${HT_ROOT}`).update({
+      stores: DB.stores || [], categories: DB.categories || [], users: DB.users || [],
+      settings: DB.settings || {}, notifications: (DB.notifications || []).slice(-300),
+      systemWarnings: DB.systemWarnings || {}
+    });
+    await ref.set(merged);
+  }
+  async function saveUserSafe(){
+    normalizeDB();
+    if(!enforceUserScope()) return;
+    const storeId = sid();
+    const key = mkey(curMonth,curYear), lk = lkey(curMonth,curYear);
+    const ref = monthRoot(curMonth,curYear);
+    const local = safeMonthPayload();
+    const updates = {};
+    ['dailyLogs','schedules','kpiTargets','adsReports','unitAssessments'].forEach(child=>{
+      filterRowsByStore(local[child], storeId).forEach((r,i)=>{ updates[`${child}/${recordId(r)||`${storeId}_${now()}_${i}`}`] = r; });
+    });
+    Object.entries(filterKeysByStore(local.planCompletion, storeId)).forEach(([k,v])=>updates[`planCompletion/${k}`]=v);
+    Object.entries(filterKeysByStore(local.planReviews, storeId)).forEach(([k,v])=>updates[`planReviews/${k}`]=v);
+    updates[`planTargets/${lk}/${storeId}`] = (local.planTargets && local.planTargets[lk] && local.planTargets[lk][storeId]) || {};
+    updates[`masterPlans/${lk}/${storeId}`] = (local.masterPlans && local.masterPlans[lk] && local.masterPlans[lk][storeId]) || {};
+    if(Object.keys(updates).length) await ref.update(updates);
+    if(typeof _loadedMonthKeys === 'object') _loadedMonthKeys[key] = {...(_loadedMonthKeys[key]||{}), ...local};
+  }
+  saveDB = async function(){
+    showLoading('Dang luu du lieu an toan...');
+    try{ if(admin()) await saveAdminSafe(); else await saveUserSafe(); }
+    catch(e){ console.error('v12.2 saveDB error:', e); msg('Luu that bai. Du lieu tren man hinh van duoc giu, vui long thu lai.', 'err'); throw e; }
+    finally{ hideLoading(); }
+  };
+  saveDB_promise = function(){ return saveDB(); };
+
+  setGlobalMonth = async function(){
+    const gm = document.getElementById('globalMonth');
+    curMonth = parseInt(gm && gm.value) || curMonth;
+    if(admin()){
+      DB.settings = DB.settings || {}; DB.settings.month = curMonth; DB.settings.year = curYear;
+      try{ await database.ref(`${HT_ROOT}/settings`).update({month:curMonth, year:curYear}); }catch(e){ console.warn('settings month update skipped:', e?.message || e); }
+    }
+    await loadMonthData(curMonth,curYear,false);
+    buildMonthSelector();
+    if(!_dashViewMonthManual){ dashViewMonth = curMonth; dashViewYear = curYear; }
+    syncUI();
+  };
+
+  async function writePlanCompletionKey(k, value, manual){
+    if(!DB.planCompletion) DB.planCompletion = {};
+    const ref = monthRoot(planMonth||curMonth, planYear||curYear).child('planCompletion');
+    const updates = {};
+    if(value){ DB.planCompletion[k] = now(); updates[k] = DB.planCompletion[k]; if(manual){ DB.planCompletion[k+'_manual'] = true; updates[k+'_manual'] = true; } }
+    else { delete DB.planCompletion[k]; delete DB.planCompletion[k+'_manual']; delete DB.planCompletion[k+'_logId']; updates[k] = null; updates[k+'_manual'] = null; updates[k+'_logId'] = null; }
+    await ref.update(updates);
+  }
+  setPlanDone = async function(storeId, day, ch, val){
+    if(!admin() && String(storeId) !== sid()){ msg('Ban chi duoc cap nhat ke hoach cua don vi minh.', 'err'); return; }
+    if(!admin() && isDateLocked(planYear, planMonth, day) && val){ msg('Da qua thoi han 2 ngay. Khong the danh dau hoan thanh.', 'err'); return; }
+    const k = getPlanKey(storeId, day, ch);
+    await writePlanCompletionKey(k, !!val, true);
+    try{ renderPlan(); }catch(e){}
+    msg(val ? 'Da danh dau hoan thanh.' : 'Da huy hoan thanh.', 'ok');
+  };
+  tasks_markAll = async function(storeId, day, val){
+    if(!admin() && String(storeId) !== sid()){ msg('Ban chi duoc cap nhat ke hoach cua don vi minh.', 'err'); return; }
+    if(!admin() && isDateLocked(planYear, planMonth, day) && val){ msg('Da qua thoi han 2 ngay. Khong the danh dau hoan thanh.', 'err'); return; }
+    const tasks = planDayTasks(storeId, day);
+    for(const t of tasks){ await writePlanCompletionKey(getPlanKey(storeId, day, t.ch), !!val, true); }
+    try{ renderPlan(); }catch(e){}
+    msg(val ? `Da hoan thanh tat ca ngay ${day}/${planMonth}` : `Da huy hoan thanh ngay ${day}/${planMonth}`, 'ok');
+  };
+  tasks_markAllModal = async function(storeId, day, val){
+    await tasks_markAll(storeId, day, val);
+    try{ openPlanDayModal(storeId, day); }catch(e){}
+  };
+
+  savePlanTask = async function(){
+    const storeId = (!admin() && sid()) ? sid() : (document.getElementById('apt-store')?.value || '').trim();
+    const dateVal = (document.getElementById('apt-date')?.value || '').trim();
+    const chKey = (document.getElementById('apt-channel')?.value || '').trim();
+    const typeVal = (document.getElementById('apt-type')?.value || '').trim();
+    const content = (document.getElementById('apt-content')?.value || '').trim();
+    const noteVal = (document.getElementById('apt-note')?.value || '').trim();
+    if(!storeId){ msg('Vui long chon cua hang.', 'warn'); return; }
+    if(!dateVal){ msg('Vui long chon ngay thuc hien.', 'warn'); return; }
+    if(!chKey){ msg('Vui long chon kenh dang.', 'warn'); return; }
+    if(!typeVal){ msg('Vui long nhap phan loai/ten cong viec.', 'warn'); return; }
+    if(!admin() && String(storeId) !== sid()){ msg('Ban chi duoc them ke hoach cho don vi minh.', 'err'); return; }
+    const parts = dateVal.split('-');
+    if(parts.length !== 3){ msg('Dinh dang ngay khong hop le.', 'err'); return; }
+    const y = parseInt(parts[0],10), m = parseInt(parts[1],10), day = parseInt(parts[2],10);
+    if(!day || day < 1 || day > 31){ msg('Ngay khong hop le.', 'err'); return; }
+    if(m !== planMonth || y !== planYear){ msg(`Ngay da chon khong thuoc thang ${planMonth}/${planYear} dang xem.`, 'warn'); return; }
+    if(!admin() && isDateLocked(y,m,day)){ msg('Da qua thoi han 2 ngay. Ban khong the them cong viec vao ngay nay.', 'err'); return; }
+    if(!DB.masterPlans) DB.masterPlans = {};
+    const mpKey = `${planMonth}_${planYear}`;
+    if(!DB.masterPlans[mpKey]) DB.masterPlans[mpKey] = {};
+    if(!DB.masterPlans[mpKey][storeId]) DB.masterPlans[mpKey][storeId] = {};
+    const task = {type:typeVal, fp:chKey==='fp'?content:'', tt:chKey==='tt'?content:'', live:chKey==='live'?content:'', zalo:chKey==='zalo'?content:'', note:noteVal, _taskId:`${storeId}_${day}_${chKey}_${now()}`, _addedBy:curUser?.username||curUser?.email||'admin', _addedAt:now()};
+    const old = DB.masterPlans[mpKey][storeId][day];
+    DB.masterPlans[mpKey][storeId][day] = Array.isArray(old) ? [...old, task] : (old ? [old, task] : [task]);
+    const ov = document.getElementById('add-plan-task-modal-ov'); if(ov) ov.style.display = 'none'; document.body.style.overflow = '';
+    planSelStore = storeId; planSelDay = day;
+    try{ renderPlan(); }catch(e){}
+    await monthRoot(planMonth,planYear).child(`masterPlans/${mpKey}/${storeId}/${day}`).set(DB.masterPlans[mpKey][storeId][day]);
+    msg(`Da them cong viec vao ngay ${day}/${planMonth}/${planYear}.`, 'ok');
+  };
+
+  function softUser(id, status){
+    if(!admin()){ msg('Chi Admin moi co quyen quan tri user.', 'err'); return null; }
+    const u = (DB.users || []).find(x=>String(x.id)===String(id) || String(x.uid)===String(id));
+    if(!u) return null;
+    u.active = false;
+    u.approved = status === 'rejected' ? false : true;
+    u.deleted = status === 'deleted';
+    u.rejected = status === 'rejected';
+    u[`${status}At`] = now();
+    u[`${status}By`] = curUser?.email || curUser?.username || 'admin';
+    return u;
+  }
+  deleteUser = async function(id){
+    const u = softUser(id, 'deleted'); if(!u) return;
+    const ok = prompt(`He thong se AN/KHOA user, khong xoa vinh vien du lieu. Nhap XOA de xac nhan: ${u.name || u.username}`);
+    if(ok !== 'XOA') return;
+    await saveDB(); try{renderUsers(); buildSidebar(); updateBellBadge();}catch(e){} msg('Da an/khoa user, du lieu cu van duoc giu.', 'inf');
+  };
+  rejectUser = async function(id){
+    const u = softUser(id, 'rejected'); if(!u) return;
+    if(!confirm(`Tu choi dang ky cua ${u.name || u.username}? Record van duoc giu de tranh lech Auth.`)) return;
+    await saveDB(); try{renderUsers(); buildSidebar(); updateBellBadge();}catch(e){} msg('Da tu choi user.', 'inf');
+  };
+  deactivateUser = async function(id){
+    const u = softUser(id, 'locked'); if(!u) return;
+    if(!confirm(`Khoa tai khoan ${u.name || u.username}? Du lieu van duoc giu.`)) return;
+    await saveDB(); try{renderUsers(); buildSidebar(); updateBellBadge();}catch(e){} msg('Da khoa user.', 'warn');
+  };
+
+  submitEntry = function(){
+    if(!admin()){
+      const st = document.getElementById('e-store')?.value || eSelStore || curUser?.storeId || '';
+      if(String(st) !== sid()){ msg('Ban chi duoc nhap du lieu cua don vi minh.', 'err'); return; }
+    }
+    const beforeCount = arr(DB.dailyLogs).length;
+    const res = ORIG22.submitEntry ? ORIG22.submitEntry() : null;
+    setTimeout(async function(){
+      try{
+        enforceUserScope();
+        const after = arr(DB.dailyLogs);
+        const rec = after.length > beforeCount ? after[after.length-1] : null;
+        if(rec && rec.planLink && rec.planLink.storeId && rec.planLink.day && rec.planLink.ch){
+          const k = getPlanKey(rec.planLink.storeId, rec.planLink.day, rec.planLink.ch);
+          if(!DB.planCompletion) DB.planCompletion = {};
+          DB.planCompletion[k] = now(); DB.planCompletion[k+'_logId'] = rec.id || rec.logId || '';
+          await monthRoot(rec.month||curMonth, rec.year||curYear).child('planCompletion').update({[k]:DB.planCompletion[k], [k+'_logId']:DB.planCompletion[k+'_logId']});
+        }
+      }catch(e){ console.warn('v12.2 post-submit sync skipped:', e?.message || e); }
+    }, 300);
+    return res;
+  };
+
+  showApp = function(){
+    if(!admin()) enforceUserScope();
+    return ORIG22.showApp ? ORIG22.showApp() : null;
+  };
+
+  window.addEventListener('error', function(e){
+    console.warn('v12.2 captured UI error:', e.message || e.error || e);
+    try{ hideLoading(); }catch(_e){}
+  });
+  window.addEventListener('unhandledrejection', function(e){
+    console.warn('v12.2 captured async error:', e.reason || e);
+    try{ hideLoading(); }catch(_e){}
+  });
+
+  console.info('Hung Thinh MKT production safety patch loaded:', window.__HT_PRODUCTION_SAFETY_PATCH__);
+})();
+
 loadDB();
 </script>
 
@@ -10785,7 +11665,6 @@ function sendInAppWarning() {
 }
 
 // ── Logic Real-time lắng nghe cảnh báo khẩn (dành cho User) ──
-let _urgentWarningListenerActive = false;
 function setupUrgentWarningListener() {
   if (isAdmin()) return; // Chỉ User mới cần lắng nghe
   if (!curUser?.storeId) return;
@@ -10794,13 +11673,15 @@ function setupUrgentWarningListener() {
 
   const storeId = curUser.storeId;
   const ref = database.ref('ht_database/systemWarnings/' + storeId);
-
-  ref.on('value', (snapshot) => {
+  const cb = (snapshot) => {
     const data = snapshot.val();
     if (data && data.message) {
       showUrgentWarning(data.message);
     }
-  });
+  };
+
+  ref.on('value', cb);
+  _urgentWarningUnsub = () => ref.off('value', cb);
 }
 
 function showUrgentWarning(message) {
