@@ -12543,6 +12543,227 @@ if (_overdueOv) {
   try{ buildMonthSelector(); }catch(e){}
 })();
 
+/* ═══════════════════════════════════════════════
+   HOTFIX v12.2.1 - Schedule duplicate registration guard
+   Mục tiêu:
+   1) Gộp toàn bộ lịch đăng ký trùng trong tháng đang mở.
+   2) Chặn tạo trùng ngay tại saveSchedule bằng khoá nghiệp vụ ổn định.
+   3) Không xoá users/stores/settings, giữ link báo cáo và cập nhật tham chiếu.
+   ═══════════════════════════════════════════════ */
+(function(){
+  if(window.__HT_SCHEDULE_DEDUPE_PATCH__) return;
+  window.__HT_SCHEDULE_DEDUPE_PATCH__ = true;
+
+  const __prevNormalizeDB = typeof normalizeDB === 'function' ? normalizeDB : null;
+  const __prevSaveDB = typeof saveDB === 'function' ? saveDB : null;
+  const __prevRenderSchedule = typeof renderSchedule === 'function' ? renderSchedule : null;
+
+  let __scheduleSaveLock = false;
+
+  function __arr(v){
+    try{return _arr(v);}catch(e){return Array.isArray(v)?v.filter(Boolean):(v&&typeof v==='object'?Object.values(v).filter(Boolean):[]);}
+  }
+  function __normText(v){
+    return String(v||'').trim().toLowerCase().replace(/\s+/g,' ');
+  }
+  function __cleanIdPart(v){
+    return __normText(v).normalize('NFD').replace(/[\u0300-\u036f]/g,'').replace(/[^a-z0-9]+/g,'_').replace(/^_+|_+$/g,'').slice(0,50) || 'x';
+  }
+  function __hash(str){
+    let h=2166136261;
+    for(let i=0;i<str.length;i++){ h^=str.charCodeAt(i); h=Math.imul(h,16777619); }
+    return (h>>>0).toString(36);
+  }
+  function __scheduleDedupeKey(s){
+    const store=__normText(s?.storeId || s?.store || '');
+    const date=String(s?.ngayDuKien || s?.date || '').trim();
+    const time=__normText(s?.khungGio || s?.time || '');
+    const staff=__normText(s?.nhanSu || s?.staff || '');
+    const cat=__normText(s?.categoryId || s?.cat || '');
+    const topic=__normText(s?.chuDe || s?.topic || '');
+    return [store,date,time,staff,cat,topic].join('|');
+  }
+  function __scheduleStableId(s){
+    const key=__scheduleDedupeKey(s);
+    const parts=key.split('|');
+    return `sch_${__cleanIdPart(parts[0])}_${String(parts[1]||'date').replace(/[^0-9]/g,'')}_${__hash(key)}`;
+  }
+  function __scoreSchedule(s){
+    let n=0;
+    if(s?.status==='done' || s?.status==='completed' || s?.status==='complete') n+=50;
+    if(s?.reportLogId) n+=35;
+    if(s?.link) n+=25;
+    if(s?.ngayThucTe) n+=20;
+    if(s?.chuDe) n+=10;
+    if(s?.lyDo) n+=5;
+    n += Number(s?.updatedAt || s?.createdAt || s?.timestamp || 0) / 10000000000000;
+    return n;
+  }
+  function __mergeScheduleRows(rows){
+    rows=__arr(rows);
+    rows.sort((a,b)=>__scoreSchedule(b)-__scoreSchedule(a));
+    const main={...(rows[0]||{})};
+    rows.forEach(r=>{
+      if(!r) return;
+      Object.keys(r).forEach(k=>{
+        if(k==='id') return;
+        if((main[k]===undefined || main[k]===null || main[k]==='') && r[k]!==undefined && r[k]!==null && r[k]!=='') main[k]=r[k];
+      });
+      if(r.status==='done' || r.status==='completed' || r.status==='complete') main.status=r.status;
+      if(r.ngayThucTe) main.ngayThucTe=r.ngayThucTe;
+      if(r.reportLogId) main.reportLogId=r.reportLogId;
+      if(r.link) main.link=r.link;
+    });
+    const ids=rows.map(r=>String(r?.id||'')).filter(Boolean);
+    main.id = main.id || ids[0] || __scheduleStableId(main);
+    main._dedupeKey = __scheduleDedupeKey(main);
+    main._dedupeMergedIds = Array.from(new Set([...(main._dedupeMergedIds||[]), ...ids])).filter(Boolean);
+    main.createdAt = Math.min(...rows.map(r=>Number(r?.createdAt||r?.timestamp||Date.now())).filter(Boolean));
+    main.updatedAt = Date.now();
+    return main;
+  }
+  function __replaceScheduleRefs(duplicateMap){
+    if(!duplicateMap || !Object.keys(duplicateMap).length) return;
+    DB.dailyLogs=__arr(DB.dailyLogs).map(l=>{
+      const out={...l};
+      ['scheduleLink','scheduleId'].forEach(k=>{
+        const old=String(out[k]||'');
+        if(old && duplicateMap[old]) out[k]=duplicateMap[old];
+      });
+      return out;
+    });
+  }
+  function __dedupeSchedulesInPlace(){
+    const rows=__arr(DB.schedules);
+    const groups=new Map();
+    rows.forEach(s=>{
+      const key=__scheduleDedupeKey(s);
+      if(!key.replace(/\|/g,'')) return;
+      if(!groups.has(key)) groups.set(key,[]);
+      groups.get(key).push(s);
+    });
+    const kept=[];
+    const duplicateMap={};
+    let duplicateCount=0;
+    groups.forEach(group=>{
+      if(group.length<=1){
+        const one={...group[0]};
+        one._dedupeKey=__scheduleDedupeKey(one);
+        if(!one.id) one.id=__scheduleStableId(one);
+        kept.push(one);
+        return;
+      }
+      const merged=__mergeScheduleRows(group);
+      group.forEach(r=>{
+        const old=String(r?.id||'');
+        if(old && old!==String(merged.id)){ duplicateMap[old]=String(merged.id); duplicateCount++; }
+      });
+      kept.push(merged);
+    });
+    DB.schedules=kept.sort((a,b)=>String(a.ngayDuKien||'').localeCompare(String(b.ngayDuKien||'')) || String(a.khungGio||'').localeCompare(String(b.khungGio||'')) || String(a.storeId||'').localeCompare(String(b.storeId||'')));
+    __replaceScheduleRefs(duplicateMap);
+    return duplicateCount;
+  }
+  function __upsertSchedule(rec){
+    rec._dedupeKey=__scheduleDedupeKey(rec);
+    if(!rec.id) rec.id=__scheduleStableId(rec);
+    DB.schedules=__arr(DB.schedules);
+    const idx=DB.schedules.findIndex(s=>__scheduleDedupeKey(s)===rec._dedupeKey);
+    if(idx>=0){
+      const merged=__mergeScheduleRows([DB.schedules[idx], rec]);
+      merged.id=DB.schedules[idx].id || rec.id;
+      DB.schedules[idx]=merged;
+      return {rec:merged, existed:true};
+    }
+    DB.schedules.push(rec);
+    return {rec, existed:false};
+  }
+
+  window.htDedupeSchedulesInPlace = __dedupeSchedulesInPlace;
+  window.htScheduleDedupeKey = __scheduleDedupeKey;
+
+  if(__prevNormalizeDB){
+    normalizeDB=function(){
+      __prevNormalizeDB();
+      try{ __dedupeSchedulesInPlace(); }catch(e){ console.warn('Schedule dedupe skipped:', e?.message||e); }
+    };
+  }
+
+  saveSchedule = async function(){
+    if(__scheduleSaveLock){ toast('Lịch đang được lưu, vui lòng chờ trong giây lát.','warn'); return; }
+    __scheduleSaveLock=true;
+    try{
+      const store=g('sc-store')||(isAdmin()?'':curUser?.storeId);
+      const staff=g('sc-staff').trim();
+      const cat=g('sc-cat');
+      const date=g('sc-date');
+      if(!store){toast('Vui lòng chọn cửa hàng!','err');return;}
+      if(!staff){toast('Vui lòng nhập tên nhân sự!','err');return;}
+      if(!date){toast('Vui lòng chọn ngày dự kiến!','err');return;}
+      const rec={
+        id:null,
+        createdAt:Date.now(),
+        updatedAt:Date.now(),
+        storeId:store,
+        nhanSu:staff,
+        categoryId:cat,
+        chuDe:g('sc-topic'),
+        ngayDuKien:date,
+        khungGio:g('sc-time'),
+        status:g('sc-status')||'pending',
+        ngayThucTe:g('sc-actual'),
+        lyDo:g('sc-reason'),
+        link:g('sc-link'),
+        createdBy:curUser?.name
+      };
+      rec.id=__scheduleStableId(rec);
+      const {rec:saved, existed}=__upsertSchedule(rec);
+      const removed=__dedupeSchedulesInPlace();
+      if(!existed){
+        pushNotification('lich',`${sname(store)} đăng ký lịch ${cname(cat)} ngày ${date} (${curUser?.name||'—'})`,store);
+      }
+      await saveDB();
+      toast(existed
+        ? `✅ Lịch đã tồn tại nên hệ thống đã gộp/cập nhật, không tạo bản trùng.`
+        : `✅ Đã lưu lịch: ${cname(cat)} – ${date}${removed?` (đã gộp thêm ${removed} bản trùng)`:''}`,'ok');
+      clrSchedule();
+      schedulePage=1;
+      renderSchedule();
+      return saved;
+    }finally{
+      __scheduleSaveLock=false;
+    }
+  };
+
+  const __saveDBWithScheduleDedupe = async function(){
+    if(__prevSaveDB){
+      try{ __dedupeSchedulesInPlace(); }catch(e){ console.warn('Schedule pre-save dedupe skipped:', e?.message||e); }
+      const ret = await __prevSaveDB();
+      try{ __dedupeSchedulesInPlace(); }catch(e){ console.warn('Schedule post-save dedupe skipped:', e?.message||e); }
+      return ret;
+    }
+  };
+  saveDB = __saveDBWithScheduleDedupe;
+  saveDB_promise=function(){ return saveDB(); };
+
+  if(__prevRenderSchedule){
+    renderSchedule=function(){
+      try{ __dedupeSchedulesInPlace(); }catch(e){ console.warn('Schedule render dedupe skipped:', e?.message||e); }
+      return __prevRenderSchedule();
+    };
+  }
+
+  window.htDedupeSchedulesCurrentMonth = async function(){
+    if(!isAdmin()){ toast('Chỉ Admin được gộp lịch đăng ký trùng.','err'); return; }
+    const before=__arr(DB.schedules).length;
+    const count=__dedupeSchedulesInPlace();
+    await saveDB();
+    try{ syncUI(); }catch(e){}
+    toast(`Đã gộp ${count} lịch đăng ký trùng. Số bản ghi: ${before} → ${__arr(DB.schedules).length}`,'ok');
+    return {merged:count,before,after:__arr(DB.schedules).length};
+  };
+})();
+
 </script>
 </body>
 </html>
