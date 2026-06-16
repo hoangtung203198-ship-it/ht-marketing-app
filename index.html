@@ -13286,92 +13286,264 @@ window.deleteCurrentMonthLogs = deleteCurrentMonthLogs;
 
 
 /* ═══════════════════════════════════════════════
-   HOTFIX v12.6.1 - Plan delete persists after F5 + visible Firebase save progress + safer Excel plan import
-   - Không xoá users/stores/settings.
-   - Xoá kế hoạch bằng update child-path trực tiếp, không dùng saveDB merge toàn tháng nên không bị hồi sau F5.
-   - Loading lưu Firebase có thanh % để user biết hệ thống đang đẩy dữ liệu.
-   - Import Excel kiểm tra ngày đúng tháng/năm đang xem, tránh ngày 31 của tháng 30 ngày và hạn chế nhân bản task khi import lại.
+   HOTFIX - Replace sạch kế hoạch khi import Excel
+   Mục tiêu:
+   - Không merge nội dung cũ
+   - Không hồi lịch cũ sau F5
+   - Không ảnh hưởng users/stores/settings/dailyLogs
    ═══════════════════════════════════════════════ */
 (function(){
-  if(window.__HT_PLAN_DELETE_IMPORT_PROGRESS_FIX__) return;
-  window.__HT_PLAN_DELETE_IMPORT_PROGRESS_FIX__ = 'v12.6.1';
+  if(window.__HT_PLAN_IMPORT_REPLACE_CLEAN__) return;
+  window.__HT_PLAN_IMPORT_REPLACE_CLEAN__ = 'v12.7-clean-replace';
 
-  function _pfAdmin(){ try{return typeof isAdmin==='function' ? isAdmin() : !!(curUser && (curUser.isAdmin || curUser.role==='admin'));}catch(e){return false;} }
-  function _pfToast(msg,type){ try{ toast(String(msg||''), type||'inf'); }catch(e){ console.log(type||'info',msg); } }
-  function _pfMonthKey(m,y){ try{return _mkey(m,y);}catch(e){ return `${parseInt(y)||curYear}_${String(parseInt(m)||curMonth).padStart(2,'0')}`; } }
-  function _pfLegacyKey(m,y){ try{return _legacyPlanKey(m,y);}catch(e){ return `${parseInt(m)||curMonth}_${parseInt(y)||curYear}`; } }
-  function _pfMonthRoot(m,y){ return database.ref(`${HT_ROOT}/${MONTH_NODE}/${_pfMonthKey(m,y)}`); }
-  function _pfObj(v){ return (v && typeof v==='object' && !Array.isArray(v)) ? v : {}; }
-  function _pfArr(v){ return Array.isArray(v) ? v.filter(Boolean) : (v && typeof v==='object' ? Object.values(v).filter(Boolean) : []); }
-  function _pfDaysInMonth(m,y){ return new Date(parseInt(y)||curYear, parseInt(m)||curMonth, 0).getDate(); }
-  function _pfCleanEmptyMasterBranch(mpKey, storeId){
-    try{
-      if(DB.masterPlans && DB.masterPlans[mpKey] && DB.masterPlans[mpKey][storeId] && Object.keys(DB.masterPlans[mpKey][storeId]).length===0) delete DB.masterPlans[mpKey][storeId];
-      if(DB.masterPlans && DB.masterPlans[mpKey] && Object.keys(DB.masterPlans[mpKey]).length===0) delete DB.masterPlans[mpKey];
-    }catch(e){}
+  function _safeToast(msg,type){
+    try{ toast(msg,type||'inf'); }catch(e){ console.log(msg); }
   }
-  function _pfRemoveStorePlanFromCaches(storeId,m,y){
-    const lk=_pfLegacyKey(m,y), mk=_pfMonthKey(m,y);
-    try{ if(DB.masterPlans && DB.masterPlans[lk]){ delete DB.masterPlans[lk][storeId]; _pfCleanEmptyMasterBranch(lk,storeId); } }catch(e){}
-    try{
-      Object.keys(_loadedMonthKeys||{}).forEach(k=>{
-        const payload=_loadedMonthKeys[k]; if(!payload || !payload.masterPlans) return;
-        if(payload.masterPlans[lk] && payload.masterPlans[lk][storeId]) delete payload.masterPlans[lk][storeId];
-        if(payload.masterPlans[lk] && Object.keys(payload.masterPlans[lk]).length===0) delete payload.masterPlans[lk];
+
+  function _m(m,y){
+    return `${parseInt(y)||curYear}_${String(parseInt(m)||curMonth).padStart(2,'0')}`;
+  }
+
+  function _lk(m,y){
+    return `${parseInt(m)||curMonth}_${parseInt(y)||curYear}`;
+  }
+
+  function _monthRoot(m,y){
+    return database.ref(`${HT_ROOT}/${MONTH_NODE}/${_m(m,y)}`);
+  }
+
+  function _cleanPlanStatusForStore(storeId,m,y){
+    const lk = _lk(m,y);
+
+    if(DB.planCompletion){
+      Object.keys(DB.planCompletion).forEach(k=>{
+        if(
+          k.startsWith(`${storeId}_`) &&
+          (
+            k.endsWith(`_${m}_${y}`) ||
+            k.includes(`_${m}_${y}`)
+          )
+        ){
+          delete DB.planCompletion[k];
+        }
       });
-    }catch(e){ console.warn('[plan-delete-fix] cache clean skipped:', e&&e.message||e); }
+    }
+
+    if(DB.planReviews){
+      Object.keys(DB.planReviews).forEach(k=>{
+        if(
+          k.startsWith(`${storeId}_`) &&
+          (
+            k.endsWith(`_${m}_${y}`) ||
+            k.includes(`_${m}_${y}`)
+          )
+        ){
+          delete DB.planReviews[k];
+        }
+      });
+    }
   }
 
-  /* Loading % ------------------------------------------------------------- */
-  (function installLoadingProgress(){
-    const oldShow = typeof showLoading === 'function' ? showLoading : null;
-    const oldHide = typeof hideLoading === 'function' ? hideLoading : null;
-    let timer=null, pct=0, active=false;
-    function ensureProgressDom(){
-      const ov=document.getElementById('loading-overlay'); if(!ov) return null;
-      let box=document.getElementById('ld-progress-box');
-      if(!box){
-        box=document.createElement('div'); box.id='ld-progress-box';
-        box.style.cssText='width:min(360px,78vw);display:none;flex-direction:column;gap:7px;align-items:stretch';
-        box.innerHTML='<div style="height:8px;background:rgba(209,213,219,.9);border-radius:999px;overflow:hidden;box-shadow:inset 0 1px 2px rgba(0,0,0,.08)"><div id="ld-progress-fill" style="height:100%;width:0%;background:linear-gradient(90deg,var(--accent),var(--accent2));border-radius:999px;transition:width .25s ease"></div></div><div id="ld-progress-label" style="font-size:12px;font-weight:800;color:var(--accent);text-align:center;font-family:var(--mono)">0%</div>';
-        ov.appendChild(box);
-      }
-      return box;
-    }
-    function setPct(v,label){
-      pct=Math.max(0,Math.min(100,Math.round(v)));
-      const box=ensureProgressDom(); if(!box) return;
-      box.style.display='flex';
-      const f=document.getElementById('ld-progress-fill'); if(f) f.style.width=pct+'%';
-      const l=document.getElementById('ld-progress-label'); if(l) l.textContent=(label||'Đang đồng bộ Firebase')+' · '+pct+'%';
-    }
-    function start(label){
-      active=true; pct=0; setPct(3,label);
-      clearInterval(timer);
-      timer=setInterval(()=>{
-        if(!active) return;
-        const step = pct<35 ? 7 : (pct<70 ? 4 : (pct<88 ? 2 : 1));
-        setPct(Math.min(92,pct+step),label);
-      },420);
-    }
-    function finish(){
-      if(!active) return;
-      setPct(100,'Hoàn tất');
-      active=false; clearInterval(timer); timer=null;
-      setTimeout(()=>{ const box=document.getElementById('ld-progress-box'); if(box && !document.getElementById('loading-overlay')?.classList.contains('show')) box.style.display='none'; },450);
-    }
-    showLoading=function(msg){
-      if(oldShow) oldShow(msg); else { const el=document.getElementById('loading-overlay'); if(el) el.classList.add('show'); const m=document.getElementById('ld-msg'); if(m) m.textContent=msg||'Đang xử lý...'; }
-      const t=String(msg||'').toLowerCase();
-      if(t.includes('lưu') || t.includes('firebase') || t.includes('đồng bộ') || t.includes('xóa') || t.includes('xoá')) start('Đang đồng bộ Firebase');
-    };
-    hideLoading=function(){
-      finish();
-      if(oldHide) oldHide(); else { const el=document.getElementById('loading-overlay'); if(el) el.classList.remove('show'); }
-    };
-    window.htSetLoadingProgress=setPct;
-  })();
+  function _cleanLoadedMonthCache(storeId,m,y){
+    const lk = _lk(m,y);
+    const mk = _m(m,y);
 
+    try{
+      if(DB.masterPlans && DB.masterPlans[lk]){
+        delete DB.masterPlans[lk][storeId];
+        if(Object.keys(DB.masterPlans[lk]).length === 0){
+          delete DB.masterPlans[lk];
+        }
+      }
+
+      Object.keys(_loadedMonthKeys || {}).forEach(cacheKey=>{
+        const payload = _loadedMonthKeys[cacheKey];
+        if(!payload || !payload.masterPlans) return;
+
+        if(payload.masterPlans[lk]){
+          delete payload.masterPlans[lk][storeId];
+          if(Object.keys(payload.masterPlans[lk]).length === 0){
+            delete payload.masterPlans[lk];
+          }
+        }
+
+        if(cacheKey === mk){
+          _loadedMonthKeys[cacheKey] = payload;
+        }
+      });
+    }catch(e){
+      console.warn('[plan clean cache]', e);
+    }
+  }
+
+  confirmPlanUpload = async function(){
+    if(!_planUploadPreview || !_planUploadPreview.length){
+      _safeToast('Không có dữ liệu để lưu!','err');
+      return;
+    }
+
+    if(typeof isAdmin === 'function' && !isAdmin()){
+      _safeToast('Chỉ Admin mới có quyền import kế hoạch!','err');
+      return;
+    }
+
+    const m = parseInt(planMonth) || parseInt(curMonth);
+    const y = parseInt(planYear) || parseInt(curYear);
+    const lk = _lk(m,y);
+
+    const storeIds = [...new Set(_planUploadPreview.map(p=>String(p.storeId || '').trim()).filter(Boolean))];
+
+    if(!storeIds.length){
+      _safeToast('File Excel không có mã cửa hàng hợp lệ!','err');
+      return;
+    }
+
+    const storeNames = storeIds.map(id=>{
+      try{return sname(id) || id;}catch(e){return id;}
+    }).join(', ');
+
+    const ok = confirm(
+      `XÁC NHẬN THAY THẾ KẾ HOẠCH\n\n` +
+      `Hệ thống sẽ xoá sạch kế hoạch cũ Tháng ${m}/${y} của:\n` +
+      `${storeNames}\n\n` +
+      `Sau đó ghi lại toàn bộ nội dung từ file Excel mới.\n\n` +
+      `Không xoá user, cửa hàng, KPI, báo cáo ngày, báo cáo ADS.\n\n` +
+      `Tiếp tục?`
+    );
+
+    if(!ok) return;
+
+    if(!DB.masterPlans) DB.masterPlans = {};
+    if(!DB.masterPlans[lk]) DB.masterPlans[lk] = {};
+
+    showLoading('Đang thay thế sạch kế hoạch cũ bằng file Excel mới...');
+
+    try{
+      const remoteUpdates = {};
+
+      storeIds.forEach(storeId=>{
+        _cleanLoadedMonthCache(storeId,m,y);
+        _cleanPlanStatusForStore(storeId,m,y);
+
+        remoteUpdates[`masterPlans/${lk}/${storeId}`] = null;
+      });
+
+      const groupMap = {};
+      const groupOrder = [];
+
+      _planUploadPreview.forEach(p=>{
+        const storeId = String(p.storeId || '').trim();
+        const day = parseInt(p.day);
+        const taskType = String(p.type || 'Nội dung').trim();
+        const key = `${storeId}__${day}__${taskType}`;
+
+        if(!groupMap[key]){
+          groupMap[key] = {
+            storeId,
+            day,
+            type: taskType,
+            fp: '',
+            tt: '',
+            live: '',
+            zalo: '',
+            note: ''
+          };
+          groupOrder.push(key);
+        }
+
+        const g = groupMap[key];
+
+        if(p.chKey === 'fp') g.fp = p.content || '';
+        else if(p.chKey === 'tt') g.tt = p.content || '';
+        else if(p.chKey === 'live') g.live = p.content || '';
+        else if(p.chKey === 'zalo') g.zalo = p.content || '';
+
+        if(p.note){
+          g.note = g.note ? `${g.note} | ${p.note}` : p.note;
+        }
+      });
+
+      const dayStoreMap = {};
+
+      groupOrder.forEach(key=>{
+        const g = groupMap[key];
+        const ds = `${g.storeId}__${g.day}`;
+
+        if(!dayStoreMap[ds]) dayStoreMap[ds] = [];
+
+        dayStoreMap[ds].push({
+          type: g.type,
+          fp: g.fp,
+          tt: g.tt,
+          live: g.live,
+          zalo: g.zalo,
+          note: g.note
+        });
+      });
+
+      Object.entries(dayStoreMap).forEach(([ds,newTasks])=>{
+        const [storeId,dayStr] = ds.split('__');
+        const day = parseInt(dayStr);
+
+        if(!DB.masterPlans[lk]) DB.masterPlans[lk] = {};
+        if(!DB.masterPlans[lk][storeId]) DB.masterPlans[lk][storeId] = {};
+
+        DB.masterPlans[lk][storeId][day] = newTasks;
+        remoteUpdates[`masterPlans/${lk}/${storeId}/${day}`] = newTasks;
+      });
+
+      if(DB.planCompletion){
+        Object.keys(DB.planCompletion).forEach(k=>{
+          storeIds.forEach(storeId=>{
+            if(k.startsWith(`${storeId}_`) && k.includes(`_${m}_${y}`)){
+              remoteUpdates[`planCompletion/${k}`] = null;
+            }
+          });
+        });
+      }
+
+      if(DB.planReviews){
+        Object.keys(DB.planReviews).forEach(k=>{
+          storeIds.forEach(storeId=>{
+            if(k.startsWith(`${storeId}_`) && k.includes(`_${m}_${y}`)){
+              remoteUpdates[`planReviews/${k}`] = null;
+            }
+          });
+        });
+      }
+
+      remoteUpdates['_meta/updatedAt'] = Date.now();
+      remoteUpdates['_meta/updatedBy'] = curUser?.email || curUser?.username || curUser?.name || 'admin';
+      remoteUpdates['_meta/saveMode'] = 'plan-import-clean-replace-v12.7';
+
+      await _monthRoot(m,y).update(remoteUpdates);
+
+      const cacheKey = _m(m,y);
+      if(_loadedMonthKeys && _loadedMonthKeys[cacheKey]){
+        _loadedMonthKeys[cacheKey].masterPlans = DB.masterPlans;
+        _loadedMonthKeys[cacheKey].planCompletion = DB.planCompletion || {};
+        _loadedMonthKeys[cacheKey].planReviews = DB.planReviews || {};
+      }
+
+      document.getElementById('plan-upload-preview-ov')?.remove();
+      _planUploadPreview = [];
+
+      if(typeof renderPlan === 'function') renderPlan();
+
+      _safeToast(
+        `✅ Đã thay thế sạch kế hoạch Tháng ${m}/${y} cho ${storeIds.length} cửa hàng. Dữ liệu cũ sẽ không hồi lại sau F5.`,
+        'ok'
+      );
+    }catch(e){
+      console.error('[confirmPlanUpload clean replace]', e);
+      _safeToast('Lưu kế hoạch thất bại. Chưa xoá dữ liệu user/cấu hình. Vui lòng kiểm tra Firebase rồi thử lại.','err');
+    }finally{
+      hideLoading();
+    }
+  };
+
+  window.confirmPlanUpload = confirmPlanUpload;
+})();
   /* Delete whole store plan: direct Firebase remove ----------------------- */
   deleteStorePlan = async function(){
     if(!_pfAdmin()){ _pfToast('Chỉ Admin mới có quyền xóa kế hoạch!','err'); return; }
